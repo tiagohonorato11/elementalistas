@@ -125,6 +125,12 @@ func start_game() -> void:
 	_start_game.rpc()
 
 
+# Recarrega a arena para todos (mesmos jogadores).
+func restart_game() -> void:
+	if multiplayer.is_server() and in_game:
+		_start_game.rpc()
+
+
 @rpc("authority", "call_local", "reliable")
 func _start_game() -> void:
 	in_game = true

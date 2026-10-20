@@ -41,6 +41,8 @@ func _physics_process(delta: float) -> void:
 		return
 	var from := global_position
 	var query := PhysicsRayQueryParameters3D.create(from, from + step)
+	# Acerta mesmo começando dentro do alvo (inimigo colado no mago).
+	query.hit_from_inside = true
 	var caster := get_parent().get_node_or_null(caster_name) as CollisionObject3D
 	if caster != null:
 		query.exclude = [caster.get_rid()]

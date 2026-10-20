@@ -30,9 +30,14 @@ godot --headless --path . res://tests/net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/net_smoke.tscn -- --role=client
 ```
 
+Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):
+```
+godot --headless --path . res://tests/flow_smoke.tscn
+```
+
 ## Estrutura
 - `scripts/core/`: regras puras (elementos, fila, forma do feitiço, vida). Ficam fora da cena para serem testáveis e, na Fase 3, rodarem só no host.
-- `scripts/gameplay/`: mago, projétil, barreira, boneco, HUD e cena principal (montada por código, em gray-box).
+- `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
 - `scripts/net/`: rede: lobby, conexão ENet, descoberta na LAN e sincronização.
 - `docs/mecanicas.md`: documento de design.
 
@@ -40,4 +45,5 @@ godot --headless --path . res://tests/net_smoke.tscn -- --role=client
 - ✅ Fases 0–1: documento de mecânicas e projeto.
 - 🟡 Fase 2: núcleo dos feitiços em gray-box.
 - 🟡 Fase 3: co-op em LAN funcionando (lobby, descoberta, até 4 jogadores, host decide o dano).
-- ⬜ Fases 4–6: inimigos e ondas, reviver, arte, polimento.
+- ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
+- ⬜ Fases 5–6: arte, som, polimento.

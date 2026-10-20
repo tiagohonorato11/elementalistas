@@ -4,14 +4,20 @@ extends Node
 const E = preload("res://scripts/core/elements.gd")
 
 signal died
+signal revived
 
 const BURN_DPS := 8.0
 const WET_TIME := 4.0
 const BURN_TIME := 4.0
 const CHILL_TIME := 3.0
 const SELF_SHIELD_TIME := 5.0
+const REVIVE_FRACTION := 0.5
 
 @export var max_hp := 100.0
+# Quem pode ser levantado com Vida depois de cair (os magos).
+@export var revivable := false
+# Multiplicador por elemento (ex.: {Fogo: 0.0} = imune). Ausente = 1.0.
+var resistances := {}
 
 var hp := 0.0
 var wet := 0.0
@@ -40,8 +46,28 @@ func apply_elements(elements: Array, scale: float) -> void:
 		_apply(element, scale)
 
 
+# Dano direto, sem elemento (ex.: golpe corpo a corpo).
+func damage(amount: float) -> void:
+	_change_hp(-amount)
+
+
+func revive() -> void:
+	if not dead:
+		return
+	reset()
+	hp = max_hp * REVIVE_FRACTION
+	revived.emit()
+
+
 func _apply(element: int, scale: float) -> void:
-	var amount: float = E.DAMAGE[element] * scale
+	if dead:
+		if element == E.Type.LIFE and revivable:
+			revive()
+		return
+	var multiplier: float = resistances.get(element, 1.0)
+	if multiplier <= 0.0:
+		return
+	var amount: float = E.DAMAGE[element] * scale * multiplier
 	if element == E.Type.WATER or element == E.Type.STEAM:
 		burning = 0.0
 		wet = WET_TIME

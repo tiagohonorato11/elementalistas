@@ -93,4 +93,23 @@ func _test_health() -> void:
 	health.apply_elements([T.LIFE, T.LIFE], 1.0)
 	check(is_equal_approx(health.hp, 100.0), "Vida cura sem passar do máximo")
 
+	health.reset()
+	health.resistances = {T.FIRE: 0.0, T.COLD: 1.5}
+	health.apply_elements([T.FIRE], 1.0)
+	check(is_equal_approx(health.hp, 100.0) and health.burning == 0.0, "imune a Fogo não queima")
+	health.apply_elements([T.COLD], 1.0)
+	check(is_equal_approx(health.hp, 85.0), "fraqueza a Frio aumenta o dano")
+	health.resistances = {}
+
+	health.reset()
+	health.damage(150.0)
+	check(health.dead and health.hp == 0.0, "dano direto derruba")
+	health.apply_elements([T.LIFE], 1.0)
+	check(health.dead, "Vida não levanta quem não é revivível")
+	health.revivable = true
+	health.apply_elements([T.EARTH], 1.0)
+	check(health.dead and health.hp == 0.0, "caído não recebe mais dano")
+	health.apply_elements([T.LIFE], 1.0)
+	check(not health.dead and is_equal_approx(health.hp, 50.0), "Vida revive com metade da vida")
+
 	health.free()

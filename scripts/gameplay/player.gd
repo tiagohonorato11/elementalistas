@@ -53,20 +53,24 @@ var queue := ElementQueue.new()
 var channel_elements: Array = []
 var channel_shape: int = SpellResolver.Shape.NONE
 var channel_time := 0.0
+var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido de lançar
 
+var body: MeshInstance3D
 var effect_mesh: MeshInstance3D
 var _shown_fx_element := -1
+var _shown_dead := false
 
 
 func _ready() -> void:
 	add_to_group("damageable")
+	add_to_group("players")
 
 	var collision := CollisionShape3D.new()
 	collision.shape = CapsuleShape3D.new()
 	collision.position.y = 1.0
 	add_child(collision)
 
-	var body := MeshInstance3D.new()
+	body = MeshInstance3D.new()
 	body.mesh = CapsuleMesh.new()
 	body.position.y = 1.0
 	var index := maxi(Network.players.find(peer_id), 0)
@@ -84,6 +88,7 @@ func _ready() -> void:
 	health = Health.new()
 	health.name = "Health"
 	health.max_hp = 200.0
+	health.revivable = true
 	add_child(health)
 	if multiplayer.is_server():
 		health.died.connect(_on_died)
@@ -96,7 +101,7 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width",
-		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded",
+		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 	])
 	set_multiplayer_authority(peer_id, false)
 
@@ -108,20 +113,20 @@ func is_local() -> bool:
 # --- Entrada (só no PC do dono) ---------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_local():
+	if not is_local() or health.dead:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key: int = event.physical_keycode
 		if ELEMENT_KEYS.has(key):
 			request_element.rpc_id(1, ELEMENT_KEYS[key])
 		elif key == KEY_SPACE:
-			request_cast.rpc_id(1, CastMode.SELF, true)
+			request_cast.rpc_id(1, CastMode.SELF, true, _forward())
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			var mode := CastMode.AREA if event.shift_pressed else CastMode.FORWARD
-			request_cast.rpc_id(1, mode, event.pressed)
+			request_cast.rpc_id(1, mode, event.pressed, _forward())
 		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
-			request_cast.rpc_id(1, CastMode.SELF, true)
+			request_cast.rpc_id(1, CastMode.SELF, true, _forward())
 
 
 func _physics_process(delta: float) -> void:
@@ -133,10 +138,29 @@ func _physics_process(delta: float) -> void:
 
 func _process(_delta: float) -> void:
 	_update_effect_visual()
+	_update_downed_visual()
+
+
+# Caído: o corpo deita e fica cinza até alguém reviver com Vida.
+func _update_downed_visual() -> void:
+	if health.dead == _shown_dead:
+		return
+	_shown_dead = health.dead
+	if health.dead:
+		body.rotation.x = PI / 2.0
+		body.position.y = 0.5
+		body.transparency = 0.5
+	else:
+		body.rotation.x = 0.0
+		body.position.y = 1.0
+		body.transparency = 0.0
 
 
 func _move_local(delta: float) -> void:
 	_update_aim()
+	if health.dead:
+		velocity = Vector3.ZERO
+		return
 
 	# Andar: segurar o botão esquerdo (vai em direção ao mouse) ou setas do teclado.
 	var direction := Vector3.ZERO
@@ -187,9 +211,18 @@ func request_element(element: int) -> void:
 
 
 @rpc("any_peer", "call_local", "reliable")
-func request_cast(mode: int, pressed: bool) -> void:
+func request_cast(mode: int, pressed: bool, aim: Vector3) -> void:
 	if not _from_owner():
 		return
+	# Usa a mira que o dono viu no momento do clique (a rotação sincronizada pode atrasar).
+	aim.y = 0.0
+	if aim.length() > 0.1:
+		_cast_dir = aim.normalized()
+	_handle_cast(mode, pressed)
+	_cast_dir = Vector3.ZERO
+
+
+func _handle_cast(mode: int, pressed: bool) -> void:
 	if not pressed:
 		_stop_channel()
 	elif mode == CastMode.FORWARD:
@@ -202,7 +235,7 @@ func request_cast(mode: int, pressed: bool) -> void:
 
 # O host só aceita pedidos vindos do dono deste mago.
 func _from_owner() -> bool:
-	if not multiplayer.is_server():
+	if not multiplayer.is_server() or health.dead:
 		return false
 	var sender := multiplayer.get_remote_sender_id()
 	if sender == 0:
@@ -217,6 +250,8 @@ func _publish_queue() -> void:
 # --- Modos de lançar (host) --------------------------------------------------
 
 func _forward() -> Vector3:
+	if _cast_dir != Vector3.ZERO:
+		return _cast_dir
 	return -global_transform.basis.z
 
 
@@ -230,9 +265,9 @@ func _cast_forward() -> void:
 	var elements := queue.elements.duplicate()
 	var shape := SpellResolver.resolve_shape(elements)
 	if shape == SpellResolver.Shape.PROJECTILE:
-		get_parent().spawn_effect({
+		get_parent().spawn_entity({
 			"type": "projectile",
-			"pos": global_position + Vector3.UP + _forward() * 0.8,
+			"pos": global_position + Vector3.UP,
 			"dir": _forward(),
 			"elements": elements,
 			"caster": String(name),
@@ -418,7 +453,7 @@ func _raycast(from: Vector3, to: Vector3) -> Dictionary:
 
 func _spawn_barrier(at: Vector3) -> void:
 	var offset := at - global_position
-	get_parent().spawn_effect({
+	get_parent().spawn_entity({
 		"type": "barrier",
 		"pos": Vector3(at.x, 0.0, at.z),
 		"yaw": atan2(offset.x, offset.z),
@@ -426,5 +461,5 @@ func _spawn_barrier(at: Vector3) -> void:
 
 
 func _on_died() -> void:
-	print("O mago %d caiu! Voltando com vida cheia." % peer_id)
-	health.reset()
+	_stop_channel()
+	_clear_queue()

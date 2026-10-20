@@ -44,17 +44,37 @@ Ao adicionar um elemento, nesta ordem:
 - **Em si mesmo** (botão do meio ou Espaço): aplica os elementos no próprio mago. Vida cura, Fogo queima! Escudo reduz o dano recebido pela metade por 5 s.
 - **Andar**: segurar o botão esquerdo (o mago vai em direção ao mouse) ou usar as setas. Isso substitui o WASD do plano, porque W, A, S e D são teclas de elemento.
 
+## Inimigos (`scripts/gameplay/enemy.gd`)
+| Tipo | Vida | Ataque | Particularidade |
+|---|---|---|---|
+| Lacaio | 120 | corpo a corpo, 15 | rápido |
+| Arqueiro | 80 | projétil de Gelo à distância | mantém ~7 m de distância |
+| Salamandra | 150 | corpo a corpo, 5 + Fogo | imune a Fogo; fraca a Água, Frio e Gelo (×1,5) |
+| Brutamontes | 450 | corpo a corpo, 40 | lento; resiste à Terra (×0,5) |
+
+Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem está caído.
+
+## Partida (`scripts/gameplay/game_state.gd`)
+- 5 s de preparação e depois **5 ondas** crescentes. Cada jogador além do primeiro adiciona 50% de inimigos.
+- Entre ondas, há 6 s de pausa, e quem caiu volta com metade da vida.
+- **Cair e reviver:** com a vida em 0, o mago cai, não age e não recebe dano. Um aliado o levanta lançando qualquer feitiço com **Vida** nele (beam, área etc.).
+- **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo.
+
 ## Ainda por fazer
 - [ ] Encantar arma
 - [ ] Barreiras elementais (parede de fogo etc.)
 - [ ] Carga de projétil (segurar para mais força)
 - [ ] Feitiços especiais com receitas próprias
-- [ ] Rede (Fase 3), inimigos e ondas (Fase 4), fogo amigo e reviver
+- [ ] Testar o reviver em partida real com amigos
+- [ ] Mais arenas e um chefe
 
-## Checklist de teste manual (Fase 2)
+## Checklist de teste manual
 - [ ] Q + F mostra "Vapor" no HUD; Q + A esvazia a fila
-- [ ] D + botão direito: projétil acerta o boneco (−40)
-- [ ] F + botão direito segurado: spray em cone; o boneco fica "queimando"
-- [ ] Q no boneco e depois A: dano dobrado
+- [ ] D + botão direito: projétil acerta um inimigo (−40)
+- [ ] F + botão direito segurado: spray em cone; o inimigo fica "queimando"
+- [ ] Q no inimigo e depois A: dano dobrado
 - [ ] E + botão direito: barreira à frente que some em 6 s
 - [ ] W + Espaço: cura o próprio mago
+- [ ] Salamandra não sofre dano de Fogo; Água ou Frio a derrubam mais rápido
+- [ ] Um amigo cai; W + botão direito (beam de Vida) nele o levanta com metade da vida
+- [ ] Todos caídos: aparece "DERROTA"; o host aperta R e a partida recomeça
