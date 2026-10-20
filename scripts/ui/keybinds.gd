@@ -27,6 +27,7 @@ const ACTIONS := [
 	{"id": "cast_self", "label": "Lançar em si mesmo", "default": ["key", KEY_SPACE]},
 	{"id": "cast_weapon", "label": "Golpe com a arma", "default": ["mouse", MOUSE_BUTTON_LEFT]},
 	{"id": "cast_special", "label": "Feitiço especial (receita na fila)", "default": ["key", KEY_G]},
+	{"id": "class_ability", "label": "Habilidade da classe", "default": ["key", KEY_CTRL]},
 ]
 
 const MOUSE_NAMES := {

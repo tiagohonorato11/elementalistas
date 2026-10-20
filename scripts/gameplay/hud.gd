@@ -77,10 +77,23 @@ func _update_status() -> void:
 		spell_text += "  (ou especial: %s)" % Specials.SPECIALS[special].label
 	if player.fx_shape == SpellResolver.Shape.PROJECTILE:
 		spell_text = "Carregando projétil: %d%%" % roundi(player.fx_length * 100.0)
-	status_label.text = "Fila: %s\nFeitiço: %s\nVida: %d %s\nJogadores: %d" % [
+	var ability: String = player.cls.ability_label
+	var ability_state := "pronta" if player.ability_cooldown <= 0.0 else "%ds" % ceili(player.ability_cooldown)
+	var class_text := "%s | %s (%s): %s" % [
+		player.cls.label, ability, Keybinds.action_text("class_ability"), ability_state]
+	if player.weapon_charges > 0:
+		var weapon_names := PackedStringArray()
+		for element in player.weapon_elements:
+			weapon_names.append(E.NAMES[element])
+		class_text += " | Arma: %s x%d" % [", ".join(weapon_names), player.weapon_charges]
+	if player.invisible > 0.0:
+		class_text += " | INVISÍVEL"
+	status_label.text = "%s\nFila: %s\nFeitiço: %s\nVida: %d/%d %s\nJogadores: %d" % [
+		class_text,
 		queue_text,
 		spell_text,
 		ceili(player.health.hp),
+		ceili(player.health.max_hp),
 		player.health.status_text(),
 		Network.players.size(),
 	]
@@ -136,8 +149,9 @@ func _help_text() -> String:
 		"Andar: %s%s%s%s ou setas | Lançar: %s (segure: carrega projétil / mantém spray, beam e arco) | Golpe: %s" % [
 			k.call("move_up"), k.call("move_left"), k.call("move_down"), k.call("move_right"),
 			k.call("cast_forward"), k.call("cast_weapon")],
-		"Área: %s + %s | Em si mesmo: %s ou botão do meio | Especial: %s | Esc: sair para o lobby" % [
-			k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"), k.call("cast_special")],
+		"Área: %s + %s | Em si mesmo: %s ou botão do meio | Especial: %s | Habilidade: %s | Esc: sair para o lobby" % [
+			k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"), k.call("cast_special"),
+			k.call("class_ability")],
 	])
 	return "\n".join(lines)
 

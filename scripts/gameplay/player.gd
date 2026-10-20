@@ -1,4 +1,4 @@
-# Mago. Em rede:
+# Personagem jogável (Mago, Assassino ou Lutador — ver scripts/core/classes.gd). Em rede:
 # - o dono (peer_id) controla movimento e mira, sincronizados para todos;
 # - teclas de elemento e lançamentos viram pedidos (RPC) para o host;
 # - o host roda a fila, os feitiços e o dano, e sincroniza vida/fila/efeitos para todos.
@@ -8,12 +8,12 @@ const E = preload("res://scripts/core/elements.gd")
 const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Specials = preload("res://scripts/core/specials.gd")
+const Classes = preload("res://scripts/core/classes.gd")
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 
 enum CastMode { FORWARD, AREA, SELF }
 
-const SPEED := 5.0
 const GRAVITY := 20.0
 const CHANNEL_MAX := 3.0
 const SPRAY_RANGE := 5.0
@@ -30,13 +30,16 @@ const CHARGE_TIME := 1.2
 const PROJECTILE_POWER := Vector2(0.6, 2.0)
 const PROJECTILE_SPEED := Vector2(14.0, 28.0)
 
-# Golpe com a arma.
-const WEAPON_RANGE := 2.3
-const WEAPON_ANGLE := 1.05  # 60 graus para cada lado
-const WEAPON_DAMAGE := 20.0
-const WEAPON_ELEMENT_SCALE := 0.8
-const WEAPON_COOLDOWN := 0.6
-const WEAPON_PUSH := 4.0
+# Habilidades de classe (os números da arma ficam em classes.gd).
+const ARCANE_SHIELD_TIME := 4.0
+const ARCANE_SHIELD_RADIUS := 4.0
+const ARCANE_SHIELD_PUSH := 7.0
+const INVISIBLE_TIME := 3.0
+const DASH_TIME := 0.35
+const DASH_SPEED := 20.0     # 20 m/s por 0,35 s = 7 m
+const DASH_DAMAGE := 30.0
+const DASH_PUSH := 10.0
+const DASH_HIT_RADIUS := 1.6
 
 # Empurrão.
 const PUSH_DECAY := 18.0
@@ -71,6 +74,8 @@ const ARROW_KEYS := {
 }
 
 var peer_id := 1
+var class_id := Classes.DEFAULT
+var cls: Dictionary          # dados da classe (classes.gd)
 var camera: Camera3D
 var health: Health
 var aim_point := Vector3.ZERO
@@ -83,6 +88,10 @@ var fx_element := 0
 var fx_length := 0.0   # comprimento do efeito; no projétil, a carga (0 a 1)
 var fx_width := 0.3
 var special_cooldowns := {}
+var ability_cooldown := 0.0
+var weapon_elements: Array = []   # elementos na arma (o Assassino guarda por 3 golpes)
+var weapon_charges := 0
+var invisible := 0.0              # Passo sombrio: os inimigos ignoram
 
 # Só usados no host.
 var queue := ElementQueue.new()
@@ -92,9 +101,18 @@ var channel_time := 0.0
 var weapon_timer := 0.0
 var storm_time := 0.0
 var storm_tick := 0.0
+var dash_hit_time := 0.0      # Investida em andamento (host)
+var dash_direction := Vector3.ZERO
+var dash_elements: Array = []
+var dash_hit: Array = []
 var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido de lançar
 
+# Investida: o dono move o personagem (só no PC dele).
+var dash_velocity := Vector3.ZERO
+var dash_time := 0.0
+
 var body: MeshInstance3D
+var body_parts: Array = []    # corpo + acessórios (ficam transparentes juntos)
 var effect_mesh: MeshInstance3D
 var _shown_fx_element := -1
 var _shown_dead := false
@@ -103,30 +121,13 @@ var _shown_dead := false
 func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("players")
-
-	var collision := CollisionShape3D.new()
-	collision.shape = CapsuleShape3D.new()
-	collision.position.y = 1.0
-	add_child(collision)
-
-	body = MeshInstance3D.new()
-	body.mesh = CapsuleMesh.new()
-	body.position.y = 1.0
-	var index := maxi(Network.players.find(peer_id), 0)
-	body.material_override = E.make_material(PLAYER_COLORS[index % PLAYER_COLORS.size()])
-	add_child(body)
-
-	# "Nariz" para mostrar para onde o mago está virado (-Z).
-	var nose := MeshInstance3D.new()
-	var nose_mesh := BoxMesh.new()
-	nose_mesh.size = Vector3(0.2, 0.2, 0.5)
-	nose.mesh = nose_mesh
-	nose.position = Vector3(0.0, 1.5, -0.5)
-	add_child(nose)
+	cls = Classes.info(class_id)
+	_build_body()
 
 	health = Health.new()
 	health.name = "Health"
-	health.max_hp = 200.0
+	health.max_hp = cls.hp
+	health.armor = cls.armor
 	health.revivable = true
 	add_child(health)
 	if multiplayer.is_server():
@@ -140,10 +141,68 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width", ".:special_cooldowns",
+		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements",
 	])
 	set_multiplayer_authority(peer_id, false)
+
+
+# Gray-box: a cor identifica o jogador; o formato e os acessórios, a classe.
+func _build_body() -> void:
+	var radius := 0.5
+	if class_id == "assassin":
+		radius = 0.4
+	elif class_id == "fighter":
+		radius = 0.6
+
+	var collision := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = radius
+	collision.shape = capsule
+	collision.position.y = 1.0
+	add_child(collision)
+
+	body = MeshInstance3D.new()
+	var capsule_mesh := CapsuleMesh.new()
+	capsule_mesh.radius = radius
+	body.mesh = capsule_mesh
+	body.position.y = 1.0
+	var index := maxi(Network.players.find(peer_id), 0)
+	body.material_override = E.make_material(PLAYER_COLORS[index % PLAYER_COLORS.size()])
+	add_child(body)
+	body_parts = [body]
+
+	# "Nariz" para mostrar para onde o personagem está virado (-Z).
+	_add_part(BoxMesh.new(), Vector3(0.2, 0.2, 0.5), Vector3(0.0, 0.5, -radius), Color(0.9, 0.9, 0.9))
+	if class_id == "mage":
+		var hat := CylinderMesh.new()
+		hat.top_radius = 0.0
+		hat.bottom_radius = 0.45
+		hat.height = 0.7
+		_add_part(hat, Vector3.ONE, Vector3(0.0, 1.3, 0.0), Color(0.3, 0.2, 0.5))
+	elif class_id == "assassin":
+		_add_part(BoxMesh.new(), Vector3(0.7, 0.18, 0.5), Vector3(0.0, 0.55, -0.1), Color(0.12, 0.12, 0.15))
+	elif class_id == "fighter":
+		_add_part(BoxMesh.new(), Vector3(1.5, 0.25, 0.55), Vector3(0.0, 0.6, 0.0), Color(0.55, 0.55, 0.6))
+
+	var label := Label3D.new()
+	label.text = cls.label
+	label.font_size = 28
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position.y = 2.6
+	add_child(label)
+
+
+func _add_part(mesh: PrimitiveMesh, size: Vector3, at: Vector3, color: Color) -> void:
+	if mesh is BoxMesh:
+		mesh.size = size
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.material_override = E.make_material(color)
+	body.add_child(part)
+	body_parts.append(part)
 
 
 func is_local() -> bool:
@@ -170,6 +229,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		request_weapon.rpc_id(1, _forward())
 	elif event.is_action_pressed("cast_special"):
 		request_special.rpc_id(1, aim_point)
+	elif event.is_action_pressed("class_ability"):
+		request_ability.rpc_id(1, _forward())
 
 
 func _is_middle_click(event: InputEvent) -> bool:
@@ -185,22 +246,19 @@ func _physics_process(delta: float) -> void:
 
 func _process(_delta: float) -> void:
 	_update_effect_visual()
-	_update_downed_visual()
+	_update_body_visual()
 
 
-# Caído: o corpo deita e fica cinza até alguém reviver com Vida.
-func _update_downed_visual() -> void:
-	if health.dead == _shown_dead:
-		return
-	_shown_dead = health.dead
-	if health.dead:
-		body.rotation.x = PI / 2.0
-		body.position.y = 0.5
-		body.transparency = 0.5
-	else:
-		body.rotation.x = 0.0
-		body.position.y = 1.0
-		body.transparency = 0.0
+# Caído: o corpo deita e fica translúcido até alguém reviver com Vida.
+# Invisível (Passo sombrio): quase transparente.
+func _update_body_visual() -> void:
+	if health.dead != _shown_dead:
+		_shown_dead = health.dead
+		body.rotation.x = PI / 2.0 if health.dead else 0.0
+		body.position.y = 0.5 if health.dead else 1.0
+	var alpha := 0.5 if health.dead else (0.8 if invisible > 0.0 else 0.0)
+	for part in body_parts:
+		part.transparency = alpha
 
 
 func _move_local(delta: float) -> void:
@@ -224,7 +282,13 @@ func _move_local(delta: float) -> void:
 	if keys != Vector2.ZERO:
 		direction = Vector3(keys.x, 0.0, keys.y)
 
-	var speed := SPEED
+	if dash_time > 0.0:
+		dash_time -= delta
+		velocity = dash_velocity
+		move_and_slide()
+		return
+
+	var speed: float = cls.speed
 	if health.frozen > 0.0:
 		speed = 0.0
 	elif health.chilled > 0.0:
@@ -317,6 +381,23 @@ func request_weapon(aim: Vector3) -> void:
 
 
 @rpc("any_peer", "call_local", "reliable")
+func request_ability(aim: Vector3) -> void:
+	if not _from_owner() or _is_channeling() or ability_cooldown > 0.0:
+		return
+	_set_cast_dir(aim)
+	var used := true
+	if cls.ability == "arcane_shield":
+		_ability_arcane_shield()
+	elif cls.ability == "shadow_step":
+		used = _ability_shadow_step()
+	elif cls.ability == "charge":
+		_ability_charge()
+	if used:
+		ability_cooldown = cls.ability_cooldown
+	_cast_dir = Vector3.ZERO
+
+
+@rpc("any_peer", "call_local", "reliable")
 func request_special(target_point: Vector3) -> void:
 	if not _from_owner() or _is_channeling():
 		return
@@ -325,7 +406,7 @@ func request_special(target_point: Vector3) -> void:
 		return
 	if _cast_special(id, target_point):
 		var cooldowns := special_cooldowns.duplicate()
-		cooldowns[id] = Specials.SPECIALS[id].cooldown
+		cooldowns[id] = Specials.SPECIALS[id].cooldown * cls.special_cooldown
 		special_cooldowns = cooldowns
 		_clear_queue()
 
@@ -368,6 +449,7 @@ func _is_channeling() -> bool:
 func _cast_forward() -> void:
 	if queue.is_empty() or _is_channeling():
 		return
+	invisible = 0.0   # atacar revela o Assassino
 	var elements := queue.elements.duplicate()
 	var shape := SpellResolver.resolve_shape(elements)
 	if shape == SpellResolver.Shape.BARRIER:
@@ -389,6 +471,7 @@ func _cast_area() -> void:
 		return
 	var elements := queue.elements.duplicate()
 	_clear_queue()
+	invisible = 0.0
 	if E.Type.SHIELD in elements:
 		for i in 8:
 			var angle := TAU * i / 8.0
@@ -426,30 +509,120 @@ func _clear_queue() -> void:
 	_publish_queue()
 
 
-# Golpe em cone curto à frente; leva junto os elementos da fila (menos Escudo).
+# Golpe em cone à frente, com os números da arma da classe. Elementos na fila
+# (menos Escudo) vão para a arma e valem por `charges` golpes. Pelas costas
+# (ou saindo da invisibilidade) o dano é multiplicado por `backstab`.
 func _swing_weapon() -> void:
-	weapon_timer = WEAPON_COOLDOWN
-	var elements := queue.elements.filter(func(element): return element != E.Type.SHIELD)
+	var weapon: Dictionary = cls.weapon
+	weapon_timer = weapon.cooldown
 	if not queue.is_empty():
+		var imbue := queue.elements.filter(func(element): return element != E.Type.SHIELD)
 		_clear_queue()
+		if not imbue.is_empty():
+			weapon_elements = imbue
+			weapon_charges = weapon.charges
+	var elements: Array = weapon_elements if weapon_charges > 0 else []
+	var from_shadows := invisible > 0.0
 	for target in _damageables():
 		var offset: Vector3 = target.global_position - global_position
 		offset.y = 0.0
-		if offset.length() <= WEAPON_RANGE and offset.length() > 0.01 \
-				and _forward().angle_to(offset.normalized()) < WEAPON_ANGLE:
-			var target_health = target.get_node_or_null("Health")
-			if target_health != null:
-				target_health.damage(WEAPON_DAMAGE)
-				if not elements.is_empty():
-					target_health.apply_elements(elements, WEAPON_ELEMENT_SCALE)
-			_push(target, _forward() * WEAPON_PUSH)
-	show_swing.rpc(elements[0] if not elements.is_empty() else -1, _forward())
+		if offset.length() > weapon.range or offset.length() < 0.01:
+			continue
+		if _forward().angle_to(offset.normalized()) >= weapon.angle:
+			continue
+		var bonus := 1.0
+		if from_shadows or _is_behind(target, offset):
+			bonus = cls.backstab
+		var target_health = target.get_node_or_null("Health")
+		if target_health != null:
+			target_health.damage(weapon.damage * bonus)
+			if not elements.is_empty():
+				target_health.apply_elements(elements, weapon.element_scale * bonus)
+		_push(target, _forward() * weapon.push)
+	if weapon_charges > 0:
+		weapon_charges -= 1
+		if weapon_charges == 0:
+			weapon_elements = []
+	invisible = 0.0
+	show_swing.rpc(elements[0] if not elements.is_empty() else -1, _forward(), weapon.range)
+
+
+# Atacando pelas costas: o alvo está virado para o mesmo lado do golpe.
+func _is_behind(target: Node3D, offset: Vector3) -> bool:
+	var facing := -target.global_transform.basis.z
+	facing.y = 0.0
+	return facing.normalized().dot(offset.normalized()) > 0.5
+
+
+# --- Habilidades de classe (host) --------------------------------------------
+
+func _ability_arcane_shield() -> void:
+	health.shielded = maxf(health.shielded, ARCANE_SHIELD_TIME)
+	for target in _damageables():
+		var offset: Vector3 = target.global_position - global_position
+		offset.y = 0.0
+		if offset.length() <= ARCANE_SHIELD_RADIUS and offset.length() > 0.01:
+			_push(target, offset.normalized() * ARCANE_SHIELD_PUSH)
+	show_flash.rpc(global_position, ARCANE_SHIELD_RADIUS, E.Type.SHIELD)
+
+
+# Avança até 6 m (ou o mais longe que estiver livre) e fica invisível.
+func _ability_shadow_step() -> bool:
+	for distance in [6.0, 5.0, 4.0, 3.0, 2.0]:
+		var destination := _clamp_target(global_position + _forward() * distance, distance)
+		if _is_free_spot(destination):
+			show_flash.rpc(global_position, 1.0, E.Type.ARCANE)
+			do_teleport.rpc_id(peer_id, destination)
+			invisible = INVISIBLE_TIME
+			return true
+	return false
+
+
+# Corre para a frente; quem estiver no caminho leva dano, os elementos da fila e um empurrão.
+func _ability_charge() -> void:
+	dash_direction = _forward()
+	dash_hit_time = DASH_TIME + 0.1   # folga para a posição sincronizada alcançar
+	dash_hit = []
+	dash_elements = queue.elements.filter(func(element): return element != E.Type.SHIELD)
+	if not queue.is_empty():
+		_clear_queue()
+	invisible = 0.0
+	do_dash.rpc_id(peer_id, dash_direction * DASH_SPEED, DASH_TIME)
+
+
+func _update_dash_hits(delta: float) -> void:
+	if dash_hit_time <= 0.0:
+		return
+	dash_hit_time -= delta
+	for target in _damageables():
+		if target in dash_hit or target.global_position.distance_to(global_position) > DASH_HIT_RADIUS:
+			continue
+		dash_hit.append(target)
+		var target_health = target.get_node_or_null("Health")
+		if target_health != null:
+			target_health.damage(DASH_DAMAGE)
+			if not dash_elements.is_empty():
+				target_health.apply_elements(dash_elements, 1.0)
+		var away: Vector3 = target.global_position - global_position
+		away.y = 0.0
+		_push(target, (dash_direction + away.normalized() * 0.5).normalized() * DASH_PUSH)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func do_dash(dash: Vector3, duration: float) -> void:
+	if _sender() != 1:
+		return
+	dash_velocity = dash
+	dash_time = duration
 
 
 # --- Atualização do host -----------------------------------------------------
 
 func _update_host(delta: float) -> void:
 	weapon_timer = maxf(weapon_timer - delta, 0.0)
+	ability_cooldown = maxf(ability_cooldown - delta, 0.0)
+	invisible = maxf(invisible - delta, 0.0)
+	_update_dash_hits(delta)
 	_update_cooldowns(delta)
 	_update_storm(delta)
 	if _is_channeling():
@@ -534,7 +707,7 @@ func _fire_projectile(elements: Array, charge: float) -> void:
 		"dir": _forward(),
 		"elements": elements,
 		"caster": String(name),
-		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge),
+		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge) * cls.spell_power,
 		"speed": lerpf(PROJECTILE_SPEED.x, PROJECTILE_SPEED.y, charge),
 	})
 
@@ -683,18 +856,18 @@ func show_flash(at: Vector3, radius: float, element: int) -> void:
 
 
 @rpc("any_peer", "call_local", "reliable")
-func show_swing(element: int, direction: Vector3) -> void:
+func show_swing(element: int, direction: Vector3, weapon_range: float) -> void:
 	if _sender() != 1:
 		return
 	var swing := MeshInstance3D.new()
 	var box := BoxMesh.new()
-	box.size = Vector3(WEAPON_RANGE * 1.2, 0.15, 0.4)
+	box.size = Vector3(weapon_range * 1.2, 0.15, 0.4)
 	swing.mesh = box
 	var color: Color = E.COLORS[element] if element >= 0 else Color(0.9, 0.9, 0.95)
 	color.a = 0.7
 	swing.material_override = E.make_material(color)
 	get_parent().add_child(swing)
-	var center := global_position + direction.normalized() * (WEAPON_RANGE * 0.6)
+	var center := global_position + direction.normalized() * (weapon_range * 0.6)
 	swing.global_position = Vector3(center.x, 1.0, center.z)
 	swing.look_at(swing.global_position + direction, Vector3.UP)
 	swing.rotate_object_local(Vector3.UP, PI / 2.0)
@@ -726,10 +899,11 @@ func _damageables() -> Array:
 	return result
 
 
+# Feitiços (spray, beam, arco, área): a força depende da classe.
 func _hit(target: Node, elements: Array, scale: float) -> void:
 	var target_health := target.get_node_or_null("Health")
 	if target_health != null:
-		target_health.apply_elements(elements, scale)
+		target_health.apply_elements(elements, scale * cls.spell_power)
 
 
 func _push(target: Node, impulse: Vector3) -> void:
@@ -756,3 +930,5 @@ func _spawn_barrier(at: Vector3, elements: Array) -> void:
 func _on_died() -> void:
 	_cancel_channel()
 	storm_time = 0.0
+	invisible = 0.0
+	dash_hit_time = 0.0

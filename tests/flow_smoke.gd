@@ -20,6 +20,7 @@ class Driver extends Node:
 		if step == 0:
 			# Acelera só a parte das ondas; a perseguição é testada em velocidade normal.
 			Engine.time_scale = 4.0
+			Network.my_class = "mage"
 			Network.host()
 			Network.start_game()
 			step = 1

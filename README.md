@@ -38,6 +38,11 @@ Teste dos feitiços (carga, golpe, barreiras, proteção, congelar, especiais):
 godot --headless --path . res://tests/spells_smoke.tscn
 ```
 
+Teste das classes (Assassino, Lutador e Mago: atributos, arma, costas, habilidades):
+```
+godot --headless --path . res://tests/classes_smoke.tscn
+```
+
 Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):
 ```
 godot --headless --path . res://tests/flow_smoke.tscn
@@ -55,4 +60,5 @@ godot --headless --path . res://tests/flow_smoke.tscn
 - ✅ Fase 2: feitiços completos (carga, barreiras elementais, proteção, golpe, 5 especiais, congelar/estilhaçar, empurrão).
 - 🟡 Fase 3: co-op em LAN funcionando (lobby, descoberta, até 4 jogadores, host decide o dano).
 - ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
+- ✅ Classes: Mago, Assassino e Lutador, escolhidas no lobby.
 - ⬜ Fases 5–6: arte, som, polimento.

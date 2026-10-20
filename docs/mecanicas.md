@@ -2,6 +2,20 @@
 
 Documento de design escrito com nossas próprias palavras. A referência de gênero são jogos co-op de magos elementais (como Magicka 2), estudados **apenas por observação**. Nenhum código, asset, texto ou nome do jogo original é usado aqui. Todos os números são nossos e ficam em `scripts/core/elements.gd`.
 
+## Classes (`scripts/core/classes.gd`)
+Cada jogador escolhe a classe no lobby (fica salva no PC). Todas usam a mesma fila de elementos e os mesmos feitiços; mudam atributos, arma e habilidade (**Ctrl**). O grupo pode repetir classes.
+
+| | Mago | Assassino | Lutador |
+|---|---|---|---|
+| Vida / velocidade | 200 / 5 | 140 / 6,5 | 320 / 4,5 |
+| Armadura | — | — | 25% de todo dano |
+| Força dos feitiços | 100% | 70% | 80% |
+| Recarga dos especiais | 1× | 1,5× | 1,5× |
+| Arma (botão esquerdo) | cajado: 20, a cada 0,6 s | adagas: 14, a cada 0,3 s | arma pesada: 35, a cada 0,9 s, cone largo, empurra forte |
+| Elementos na arma | 1 golpe (×0,8) | **3 golpes** (×1,0) | 1 golpe (×1,2) |
+| Bônus | — | **pelas costas: 2×** | — |
+| Habilidade (Ctrl) | **Escudo arcano**: metade do dano por 4 s e empurra quem está a até 4 m (12 s de recarga) | **Passo sombrio**: avança até 6 m e fica **invisível** por 3 s, ignorado pelos inimigos; o próximo golpe vale 2×; atacar revela (8 s) | **Investida**: corre 7 m; quem estiver no caminho leva 30 + os elementos da fila e é empurrado, aliados também (7 s) |
+
 ## Elementos e teclas
 As teclas abaixo são o padrão; cada jogador pode trocá-las em **Configurações**, no lobby. As escolhas ficam salvas em `user://settings.cfg`.
 

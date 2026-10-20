@@ -78,7 +78,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_all_loaded() -> void:
 	spawn_entity({"type": "state", "pos": Vector3.ZERO})
 	for i in Network.players.size():
-		spawn_entity({"type": "player", "id": Network.players[i], "pos": SPAWN_POINTS[i]})
+		var peer: int = Network.players[i]
+		spawn_entity({"type": "player", "id": peer, "class": Network.class_of(peer), "pos": SPAWN_POINTS[i]})
 
 
 func _on_player_left(peer_id: int) -> void:
@@ -105,6 +106,7 @@ func _spawn_entity(data: Dictionary) -> Node:
 	if data.type == "player":
 		var player := Player.new()
 		player.peer_id = data.id
+		player.class_id = data.get("class", "mage")
 		if data.id == multiplayer.get_unique_id():
 			local_player = player
 			player.camera = camera

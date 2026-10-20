@@ -18,6 +18,7 @@ class Driver extends Node:
 		var main := get_tree().current_scene
 		if role == "host":
 			if step == 0:
+				Network.my_class = "mage"
 				Network.host()
 				step = 1
 			elif step == 1 and Network.players.size() >= 2:
@@ -30,6 +31,7 @@ class Driver extends Node:
 				get_tree().quit()
 		else:
 			if step == 0 and time > 1.0:
+				Network.my_class = "fighter"   # o cliente joga de Lutador (não salva)
 				Network.join("127.0.0.1")
 				step = 1
 			elif step == 1 and main != null and main.get("local_player") != null:
@@ -52,7 +54,12 @@ class Driver extends Node:
 						player.request_element.rpc_id(1, element)
 					player.request_special.rpc_id(1, player.global_position)
 					step = 4
-			elif step == 4 and time > 13.0:
+			elif step == 4 and time > 11.0 and main.local_player.get("dash_velocity") != null:
+				# Investida do Lutador: o host pede, o PC do cliente move.
+				print("[client] investida a partir de %s" % main.local_player.global_position.snapped(Vector3.ONE * 0.1))
+				main.local_player.request_ability.rpc_id(1, Vector3(-1, 0, 0))
+				step = 5
+			elif step == 5 and time > 13.0:
 				_report(main)
 				get_tree().quit()
 
@@ -66,7 +73,7 @@ class Driver extends Node:
 		for child in main.get_children():
 			if child.is_in_group("enemies") or child.is_in_group("players"):
 				var kind = child.get("kind")
-				lines.append("[%s] %s %s pos=%s hp=%d caído=%s congelado=%s" % [role, child.name, kind if kind else "mago",
+				lines.append("[%s] %s %s pos=%s hp=%d caído=%s congelado=%s" % [role, child.name, kind if kind else child.cls.label,
 						child.position.snapped(Vector3.ONE * 0.1), child.health.hp, child.health.dead, child.health.frozen > 0.0])
 		print("\n".join(lines))
 

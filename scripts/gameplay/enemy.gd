@@ -200,5 +200,6 @@ func _nearest_player() -> Node3D:
 	return best
 
 
+# Ignora magos caídos e o Assassino invisível.
 func _is_valid_target(node) -> bool:
-	return is_instance_valid(node) and not node.is_queued_for_deletion() and not node.health.dead
+	return is_instance_valid(node) and not node.is_queued_for_deletion() and not node.health.dead and node.invisible <= 0.0

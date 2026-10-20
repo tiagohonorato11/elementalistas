@@ -8,6 +8,7 @@ const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Health = preload("res://scripts/core/health.gd")
 const Keybinds = preload("res://scripts/ui/keybinds.gd")
 const Specials = preload("res://scripts/core/specials.gd")
+const Classes = preload("res://scripts/core/classes.gd")
 
 var checks := 0
 var failures := 0
@@ -20,6 +21,7 @@ func _init() -> void:
 	_test_statuses()
 	_test_specials()
 	_test_keybinds()
+	_test_classes()
 	print("%d verificações, %d falhas" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -181,3 +183,27 @@ func _test_specials() -> void:
 	for id in Specials.ORDER:
 		var recipe: Array = Specials.SPECIALS[id].recipe
 		check(Specials.match_special(queue_of(recipe)) == id, "receita de %s é montável na fila" % id)
+
+
+func _test_classes() -> void:
+	for id in Classes.ORDER:
+		var info := Classes.info(id)
+		var ok := true
+		for key in ["label", "description", "hp", "speed", "armor", "spell_power", "special_cooldown",
+				"weapon", "backstab", "ability", "ability_label", "ability_cooldown"]:
+			ok = ok and info.has(key)
+		for key in ["damage", "cooldown", "range", "angle", "push", "element_scale", "charges"]:
+			ok = ok and info.weapon.has(key)
+		check(ok, "classe %s tem todos os atributos" % id)
+	check(Classes.info("nao_existe").label == "Mago", "classe desconhecida vira Mago")
+
+	var health := Health.new()
+	health.max_hp = 100.0
+	health.armor = 0.25
+	health.reset()
+	health.damage(40.0)
+	check(is_equal_approx(health.hp, 70.0), "armadura de 25% reduz o dano")
+	health.shielded = 1.0
+	health.damage(40.0)
+	check(is_equal_approx(health.hp, 55.0), "armadura e escudo se somam")
+	health.free()

@@ -1,6 +1,8 @@
 # Tela inicial: hospedar, jogar sozinho, entrar em partida encontrada ou por IP.
-# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N
+# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N | --class=ID
 extends Control
+
+const Classes = preload("res://scripts/core/classes.gd")
 
 enum State { MENU, HOSTING, CONNECTING, CONNECTED }
 
@@ -12,6 +14,8 @@ var wait_box: VBoxContainer
 var wait_label: Label
 var start_button: Button
 var status_label: Label
+var class_buttons := {}   # id da classe -> Button
+var class_description: Label
 
 var _games_signature := "?"
 var _games_timer := 0.0
@@ -48,6 +52,21 @@ func _build_ui() -> void:
 
 	var title := _label(column, "Elementistas", 48)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	# Escolha de classe: vale em qualquer estado do lobby.
+	var class_row := HBoxContainer.new()
+	class_row.add_theme_constant_override("separation", 8)
+	column.add_child(class_row)
+	_label(class_row, "Classe:", 18)
+	for id in Classes.ORDER:
+		var button := _button(class_row, Classes.info(id).label, _on_class_pressed.bind(id))
+		button.toggle_mode = true
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		class_buttons[id] = button
+	class_description = _label(column, "", 15)
+	class_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	class_description.custom_minimum_size.x = 480
+	_refresh_class()
 
 	menu_box = VBoxContainer.new()
 	menu_box.add_theme_constant_override("separation", 8)
@@ -102,6 +121,29 @@ func _process(delta: float) -> void:
 				func(): _join(ip))
 
 
+func _on_class_pressed(id: String) -> void:
+	Network.set_my_class(id)
+	_refresh_class()
+
+
+func _refresh_class() -> void:
+	for id in class_buttons:
+		class_buttons[id].set_pressed_no_signal(id == Network.my_class)
+	class_description.text = Classes.info(Network.my_class).description
+
+
+# "Host: Mago", "Jogador 2 (você): Lutador"...
+func _players_text() -> String:
+	var names := PackedStringArray()
+	for i in Network.players.size():
+		var peer: int = Network.players[i]
+		var who := "Host" if peer == 1 else "Jogador %d" % (i + 1)
+		if peer == multiplayer.get_unique_id():
+			who += " (você)"
+		names.append("%s: %s" % [who, Classes.info(Network.class_of(peer)).label])
+	return "\n".join(names)
+
+
 func _set_state(new_state: State) -> void:
 	state = new_state
 	menu_box.visible = state == State.MENU
@@ -118,14 +160,15 @@ func _refresh() -> void:
 			lines.append("Seu IP (%s): %s" % [entry.name, entry.ip])
 		lines.append("")
 		lines.append("Jogadores conectados: %d/%d" % [Network.players.size(), Network.MAX_PLAYERS])
+		lines.append(_players_text())
 		wait_label.text = "\n".join(lines)
 		if _autostart > 0 and Network.players.size() >= _autostart:
 			_on_start_pressed.call_deferred()
 	elif state == State.CONNECTING:
 		wait_label.text = "Conectando..."
 	elif state == State.CONNECTED:
-		wait_label.text = "Conectado! Jogadores: %d/%d\nAguardando o host começar a partida..." % [
-			Network.players.size(), Network.MAX_PLAYERS]
+		wait_label.text = "Conectado! Jogadores: %d/%d\n%s\nAguardando o host começar a partida..." % [
+			Network.players.size(), Network.MAX_PLAYERS, _players_text()]
 
 
 func _on_host_pressed() -> void:
@@ -177,6 +220,9 @@ func _parse_command_line() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--autostart="):
 			_autostart = arg.get_slice("=", 1).to_int()
+		elif arg.begins_with("--class="):
+			Network.set_my_class(arg.get_slice("=", 1))
+			_refresh_class()
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--host":
 			_on_host_pressed()

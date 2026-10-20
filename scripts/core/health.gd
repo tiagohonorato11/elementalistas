@@ -20,6 +20,8 @@ const WARD_TIME := 10.0
 @export var revivable := false
 # Multiplicador por elemento (ex.: {Fogo: 0.0} = imune). Ausente = 1.0.
 var resistances := {}
+# Fração de todo dano recebido que é ignorada (ex.: 0.25 do Lutador).
+var armor := 0.0
 
 var hp := 0.0
 var wet := 0.0
@@ -122,8 +124,10 @@ func _apply(element: int, scale: float) -> void:
 func _change_hp(delta_hp: float) -> void:
 	if dead:
 		return
-	if delta_hp < 0.0 and shielded > 0.0:
-		delta_hp *= 0.5
+	if delta_hp < 0.0:
+		delta_hp *= 1.0 - armor
+		if shielded > 0.0:
+			delta_hp *= 0.5
 	hp = clampf(hp + delta_hp, 0.0, max_hp)
 	if hp <= 0.0:
 		dead = true

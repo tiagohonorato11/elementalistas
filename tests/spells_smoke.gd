@@ -13,6 +13,7 @@ class Driver extends Node:
 	var failures := 0
 
 	func _ready() -> void:
+		Network.my_class = "mage"   # os números do teste são os do Mago (não salva)
 		Network.host()
 		Network.start_game()
 		await _wait_until(func(): return _scene_ready())

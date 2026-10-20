@@ -2,6 +2,8 @@
 # e descoberta automática de partidas no mesmo Wi-Fi (broadcast UDP).
 extends Node
 
+const Classes = preload("res://scripts/core/classes.gd")
+
 signal players_changed
 signal connected
 signal connection_failed
@@ -15,8 +17,11 @@ const DISCOVERY_TAG := "ELEMENTISTAS"
 const DISCOVERY_TIMEOUT_MS := 3000
 const GAME_SCENE := "res://scenes/main.tscn"
 const LOBBY_SCENE := "res://scenes/lobby.tscn"
+const SETTINGS_PATH := "user://settings.cfg"
 
 var players: Array = []          # ids dos peers na partida (o host é sempre 1)
+var classes := {}                # id do peer -> classe escolhida (decidido pelo host)
+var my_class := Classes.DEFAULT  # classe escolhida neste PC (salva entre sessões)
 var in_game := false
 var last_message := ""           # mostrado no lobby ao voltar para ele
 var found_games := {}            # ip -> {"players": int, "seen": int}
@@ -31,9 +36,10 @@ var _listener: PacketPeerUDP
 
 
 func _ready() -> void:
+	_load_class()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(func(): connected.emit())
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(func(): _fail_connection.call_deferred())
 	multiplayer.server_disconnected.connect(
 		func(): back_to_lobby.call_deferred("O host encerrou a partida."))
@@ -52,6 +58,7 @@ func host() -> Error:
 		return error
 	multiplayer.multiplayer_peer = peer
 	players = [1]
+	classes = {1: my_class}
 	in_game = false
 	_start_broadcast()
 	players_changed.emit()
@@ -73,6 +80,7 @@ func leave() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	players = []
+	classes = {}
 	in_game = false
 	_loaded_peers = []
 	_all_loaded_sent = false
@@ -90,28 +98,79 @@ func _fail_connection() -> void:
 	connection_failed.emit()
 
 
+func _on_connected_to_server() -> void:
+	_report_class.rpc_id(1, my_class)
+	connected.emit()
+
+
 func _on_peer_connected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	players.append(id)
-	_sync_players.rpc(players)
+	classes[id] = Classes.DEFAULT   # até o jogador informar a classe dele
+	_sync_players.rpc(players, classes)
 
 
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	players.erase(id)
+	classes.erase(id)
 	_loaded_peers.erase(id)
-	_sync_players.rpc(players)
+	_sync_players.rpc(players, classes)
 	player_left.emit(id)
 	if in_game:
 		_check_all_loaded()
 
 
 @rpc("authority", "call_local", "reliable")
-func _sync_players(list: Array) -> void:
+func _sync_players(list: Array, class_map: Dictionary) -> void:
 	players = list.duplicate()
+	classes = class_map.duplicate()
 	players_changed.emit()
+
+
+# --- Classes -----------------------------------------------------------------
+
+func class_of(peer_id: int) -> String:
+	return classes.get(peer_id, Classes.DEFAULT)
+
+
+# Escolha feita no lobby; vale a partir da próxima partida (ou reinício).
+func set_my_class(id: String) -> void:
+	if not Classes.is_valid(id):
+		return
+	my_class = id
+	_save_class()
+	if is_online() and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+		_report_class.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _report_class(id: String) -> void:
+	if not multiplayer.is_server() or not Classes.is_valid(id):
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	if sender in players:
+		classes[sender] = id
+		_sync_players.rpc(players, classes)
+
+
+func _load_class() -> void:
+	var config := ConfigFile.new()
+	if config.load(SETTINGS_PATH) == OK:
+		var saved: String = config.get_value("jogador", "classe", Classes.DEFAULT)
+		if Classes.is_valid(saved):
+			my_class = saved
+
+
+func _save_class() -> void:
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	config.set_value("jogador", "classe", my_class)
+	config.save(SETTINGS_PATH)
 
 
 # --- Início da partida -------------------------------------------------------
