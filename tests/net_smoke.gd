@@ -47,6 +47,10 @@ class Driver extends Node:
 					player.request_cast.rpc_id(1, 0, true, aim)
 					player.request_cast.rpc_id(1, 0, false, aim)
 					print("[client] mirou em %s" % enemies[0].name)
+					# Feitiço especial pela rede: Inverno congela os inimigos próximos.
+					for element in [E.Type.COLD, E.Type.SHIELD, E.Type.COLD]:
+						player.request_element.rpc_id(1, element)
+					player.request_special.rpc_id(1, player.global_position)
 					step = 4
 			elif step == 4 and time > 13.0:
 				_report(main)
@@ -57,10 +61,13 @@ class Driver extends Node:
 		var lines := PackedStringArray(["[%s] jogadores=%d fase=%d onda=%d restantes=%d" % [
 			role, Network.players.size(), state.phase, state.wave, state.enemies_left]])
 		for child in main.get_children():
+			if child.is_in_group("players") and not child.special_cooldowns.is_empty():
+				lines.append("[%s] %s recargas=%s" % [role, child.name, child.special_cooldowns.keys()])
+		for child in main.get_children():
 			if child.is_in_group("enemies") or child.is_in_group("players"):
 				var kind = child.get("kind")
-				lines.append("[%s] %s %s pos=%s hp=%d caído=%s" % [role, child.name, kind if kind else "mago",
-						child.position.snapped(Vector3.ONE * 0.1), child.health.hp, child.health.dead])
+				lines.append("[%s] %s %s pos=%s hp=%d caído=%s congelado=%s" % [role, child.name, kind if kind else "mago",
+						child.position.snapped(Vector3.ONE * 0.1), child.health.hp, child.health.dead, child.health.frozen > 0.0])
 		print("\n".join(lines))
 
 

@@ -9,6 +9,7 @@ const GameState = preload("res://scripts/gameplay/game_state.gd")
 const Hud = preload("res://scripts/gameplay/hud.gd")
 const Projectile = preload("res://scripts/gameplay/projectile.gd")
 const Barrier = preload("res://scripts/gameplay/barrier.gd")
+const Meteor = preload("res://scripts/gameplay/meteor.gd")
 
 const CAMERA_OFFSET := Vector3(0.0, 13.0, 9.0)
 const ARENA_SIZE := 40.0
@@ -115,11 +116,15 @@ func _spawn_entity(data: Dictionary) -> Node:
 		node = enemy
 	elif data.type == "projectile":
 		var projectile := Projectile.new()
-		projectile.setup(data.elements, data.caster, data.dir)
+		projectile.setup(data.elements, data.caster, data.dir, data.get("power", 1.0), data.get("speed", 18.0))
 		node = projectile
 	elif data.type == "barrier":
-		node = Barrier.new()
-		node.rotation.y = data.yaw
+		var barrier := Barrier.new()
+		barrier.setup(data.get("elements", []))
+		barrier.rotation.y = data.yaw
+		node = barrier
+	elif data.type == "meteor":
+		node = Meteor.new()
 	elif data.type == "state":
 		game_state = GameState.new()
 		hud.game_state = game_state

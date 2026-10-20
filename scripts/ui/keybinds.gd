@@ -5,13 +5,15 @@ extends Node
 
 const SAVE_PATH := "user://settings.cfg"
 const SECTION := "teclas"
+# Ao mudar os padrões de forma incompatível, aumente: configurações antigas são descartadas.
+const SETTINGS_VERSION := 2
 
 const ACTIONS := [
 	{"id": "move_up", "label": "Andar para cima", "default": ["key", KEY_W]},
 	{"id": "move_down", "label": "Andar para baixo", "default": ["key", KEY_S]},
 	{"id": "move_left", "label": "Andar para a esquerda", "default": ["key", KEY_A]},
 	{"id": "move_right", "label": "Andar para a direita", "default": ["key", KEY_D]},
-	{"id": "move_to_cursor", "label": "Andar até o cursor (segurar)", "default": ["mouse", MOUSE_BUTTON_LEFT]},
+	{"id": "move_to_cursor", "label": "Andar até o cursor (segurar)", "default": ["mouse", MOUSE_BUTTON_XBUTTON1]},
 	{"id": "element_water", "label": "Água", "default": ["key", KEY_Q]},
 	{"id": "element_life", "label": "Vida", "default": ["key", KEY_E]},
 	{"id": "element_shield", "label": "Escudo", "default": ["key", KEY_R]},
@@ -23,6 +25,8 @@ const ACTIONS := [
 	{"id": "cast_forward", "label": "Lançar à frente", "default": ["mouse", MOUSE_BUTTON_RIGHT]},
 	{"id": "area_modifier", "label": "Modificador de área (segurar ao lançar)", "default": ["key", KEY_SHIFT]},
 	{"id": "cast_self", "label": "Lançar em si mesmo", "default": ["key", KEY_SPACE]},
+	{"id": "cast_weapon", "label": "Golpe com a arma", "default": ["mouse", MOUSE_BUTTON_LEFT]},
+	{"id": "cast_special", "label": "Feitiço especial (receita na fila)", "default": ["key", KEY_G]},
 ]
 
 const MOUSE_NAMES := {
@@ -121,6 +125,7 @@ func save() -> void:
 		return
 	var config := ConfigFile.new()
 	config.load(SAVE_PATH)
+	config.set_value("geral", "versao", SETTINGS_VERSION)
 	for id in bindings:
 		config.set_value(SECTION, id, "%s:%d" % bindings[id])
 	config.save(SAVE_PATH)
@@ -128,7 +133,7 @@ func save() -> void:
 
 func _load() -> void:
 	var config := ConfigFile.new()
-	if config.load(SAVE_PATH) != OK:
+	if config.load(SAVE_PATH) != OK or config.get_value("geral", "versao", 1) != SETTINGS_VERSION:
 		return
 	for id in bindings:
 		var parts := String(config.get_value(SECTION, id, "")).split(":")

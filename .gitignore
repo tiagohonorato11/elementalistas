@@ -2,3 +2,6 @@
 /android/
 *.tmp
 build/
+/Elementistas.exe
+/Elementistas.new.exe
+tools/last_build.log

@@ -1,4 +1,4 @@
-# Testes da lógica pura (fila, resolvedor e vida).
+# Testes da lógica pura (fila, resolvedor, vida, especiais e teclas).
 # Rodar: godot --headless --path . --script res://tests/run_tests.gd
 extends SceneTree
 
@@ -7,6 +7,7 @@ const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Health = preload("res://scripts/core/health.gd")
 const Keybinds = preload("res://scripts/ui/keybinds.gd")
+const Specials = preload("res://scripts/core/specials.gd")
 
 var checks := 0
 var failures := 0
@@ -16,6 +17,8 @@ func _init() -> void:
 	_test_queue()
 	_test_resolver()
 	_test_health()
+	_test_statuses()
+	_test_specials()
 	_test_keybinds()
 	print("%d verificações, %d falhas" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -133,9 +136,48 @@ func _test_keybinds() -> void:
 	check(event.is_action("element_water") and not event.is_action("element_life"), "InputMap atualizado")
 
 	keybinds.set_binding("cast_forward", ["mouse", MOUSE_BUTTON_LEFT])
-	check(keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_RIGHT], "botões do mouse também trocam")
+	check(keybinds.bindings.cast_weapon == ["mouse", MOUSE_BUTTON_RIGHT], "botões do mouse também trocam")
 	check(Keybinds.event_to_binding(event) == ["key", KEY_E], "evento de tecla vira binding")
 
 	keybinds.load_defaults()
 	check(keybinds.bindings.element_life == ["key", KEY_E], "restaurar padrão")
 	keybinds.free()
+
+
+func _test_statuses() -> void:
+	var T = E.Type
+	var health := Health.new()
+	health.max_hp = 200.0
+
+	health.reset()
+	health.apply_elements([T.WATER], 1.0)
+	health.apply_elements([T.COLD], 1.0)
+	check(health.frozen > 0.0 and health.wet == 0.0, "Frio em alvo molhado congela")
+	health.apply_elements([T.FIRE], 1.0)
+	check(health.frozen == 0.0 and health.burning == 0.0, "Fogo descongela sem incendiar")
+
+	health.reset()
+	health.freeze(2.0)
+	var before := health.hp
+	health.apply_elements([T.EARTH], 1.0)
+	check(is_equal_approx(before - health.hp, 80.0) and health.frozen == 0.0, "Terra estilhaça congelado (2x)")
+
+	health.reset()
+	health.set_ward([T.FIRE, T.LIGHTNING])
+	health.apply_elements([T.FIRE, T.LIGHTNING], 1.0)
+	check(is_equal_approx(health.hp, 200.0) and health.burning == 0.0, "proteção bloqueia os elementos dela")
+	health.apply_elements([T.ARCANE], 1.0)
+	check(is_equal_approx(health.hp, 165.0), "proteção não bloqueia outros elementos")
+	health.free()
+
+
+func _test_specials() -> void:
+	var T = E.Type
+	check(Specials.match_special([T.FIRE, T.EARTH, T.FIRE, T.EARTH]) == "meteor", "receita do Meteoro")
+	check(Specials.match_special([T.EARTH, T.EARTH, T.FIRE, T.FIRE]) == "meteor", "ordem não importa")
+	check(Specials.match_special([T.FIRE, T.EARTH, T.FIRE]) == "", "receita incompleta não lança")
+	check(Specials.match_special([]) == "", "fila vazia não lança")
+	# Toda receita precisa sobreviver às anulações e fusões da fila.
+	for id in Specials.ORDER:
+		var recipe: Array = Specials.SPECIALS[id].recipe
+		check(Specials.match_special(queue_of(recipe)) == id, "receita de %s é montável na fila" % id)

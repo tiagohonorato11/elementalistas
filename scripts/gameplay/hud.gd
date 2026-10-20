@@ -1,15 +1,24 @@
-# HUD: fila de elementos, vida, onda atual, avisos e ajuda de controles.
+# HUD: fila de elementos, vida, onda atual, feitiços especiais, avisos e ajuda de controles.
 extends CanvasLayer
 
 const E = preload("res://scripts/core/elements.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const GameState = preload("res://scripts/gameplay/game_state.gd")
+const Specials = preload("res://scripts/core/specials.gd")
+
+const ELEMENT_ACTION_IDS := {
+	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
+	E.Type.COLD: "element_cold", E.Type.LIGHTNING: "element_lightning", E.Type.ARCANE: "element_arcane",
+	E.Type.EARTH: "element_earth", E.Type.FIRE: "element_fire",
+}
 
 var player: Node
 var game_state: Node
 var status_label: Label
 var wave_label: Label
+var specials_label: Label
 var banner: Label
+var _recipe_keys := {}   # id do especial -> teclas da receita (ex.: "V C V C")
 
 
 func _ready() -> void:
@@ -26,6 +35,18 @@ func _ready() -> void:
 	wave_label.offset_right = -16
 	wave_label.offset_top = 16
 
+	specials_label = _make_label(17)
+	specials_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	specials_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	specials_label.offset_left = -520
+	specials_label.offset_right = -16
+	specials_label.offset_top = 110
+	for id in Specials.ORDER:
+		var keys := PackedStringArray()
+		for element in Specials.SPECIALS[id].recipe:
+			keys.append(Keybinds.action_text(ELEMENT_ACTION_IDS[element]))
+		_recipe_keys[id] = " ".join(keys)
+
 	banner = _make_label(40)
 	banner.set_anchors_preset(Control.PRESET_CENTER)
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -38,6 +59,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_status()
 	_update_wave()
+	_update_specials()
 
 
 func _update_status() -> void:
@@ -49,13 +71,31 @@ func _update_status() -> void:
 		names.append(E.NAMES[element])
 	var queue_text := "(vazia)" if names.is_empty() else ", ".join(names)
 	var shape := SpellResolver.resolve_shape(player.queue_view)
+	var spell_text: String = SpellResolver.SHAPE_NAMES[shape]
+	var special := Specials.match_special(player.queue_view)
+	if not special.is_empty():
+		spell_text += "  (ou especial: %s)" % Specials.SPECIALS[special].label
+	if player.fx_shape == SpellResolver.Shape.PROJECTILE:
+		spell_text = "Carregando projétil: %d%%" % roundi(player.fx_length * 100.0)
 	status_label.text = "Fila: %s\nFeitiço: %s\nVida: %d %s\nJogadores: %d" % [
 		queue_text,
-		SpellResolver.SHAPE_NAMES[shape],
+		spell_text,
 		ceili(player.health.hp),
 		player.health.status_text(),
 		Network.players.size(),
 	]
+
+
+func _update_specials() -> void:
+	if not is_instance_valid(player):
+		specials_label.text = ""
+		return
+	var lines := PackedStringArray(["Especiais (%s com a receita na fila):" % Keybinds.action_text("cast_special")])
+	for id in Specials.ORDER:
+		var left: float = player.special_cooldowns.get(id, 0.0)
+		var state := "pronto" if left <= 0.0 else "%ds" % ceili(left)
+		lines.append("%s  [%s]  %s" % [Specials.SPECIALS[id].label, _recipe_keys[id], state])
+	specials_label.text = "\n".join(lines)
 
 
 func _update_wave() -> void:
@@ -88,19 +128,18 @@ func _update_wave() -> void:
 # Ajuda montada com as teclas que o jogador configurou.
 func _help_text() -> String:
 	var elements := PackedStringArray()
-	for action in ["element_water", "element_life", "element_shield", "element_cold",
-			"element_lightning", "element_arcane", "element_earth", "element_fire"]:
-		var label: String = Keybinds.ACTIONS.filter(func(a): return a.id == action)[0].label
-		elements.append("%s %s" % [Keybinds.action_text(action), label])
+	for element in ELEMENT_ACTION_IDS:
+		elements.append("%s %s" % [Keybinds.action_text(ELEMENT_ACTION_IDS[element]), E.NAMES[element]])
 	var k := func(id): return Keybinds.action_text(id)
-	return "Elementos: %s
-Andar: %s%s%s%s ou setas (ou segurar %s) | Lançar à frente: %s (segure para spray/beam/arco)
-Área: %s + %s | Em si mesmo: %s ou botão do meio | Esc: sair para o lobby" % [
-		" | ".join(elements),
-		k.call("move_up"), k.call("move_left"), k.call("move_down"), k.call("move_right"),
-		k.call("move_to_cursor"), k.call("cast_forward"),
-		k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"),
-	]
+	var lines := PackedStringArray([
+		"Elementos: " + " | ".join(elements),
+		"Andar: %s%s%s%s ou setas | Lançar: %s (segure: carrega projétil / mantém spray, beam e arco) | Golpe: %s" % [
+			k.call("move_up"), k.call("move_left"), k.call("move_down"), k.call("move_right"),
+			k.call("cast_forward"), k.call("cast_weapon")],
+		"Área: %s + %s | Em si mesmo: %s ou botão do meio | Especial: %s | Esc: sair para o lobby" % [
+			k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"), k.call("cast_special")],
+	])
+	return "\n".join(lines)
 
 
 func _make_label(font_size: int) -> Label:

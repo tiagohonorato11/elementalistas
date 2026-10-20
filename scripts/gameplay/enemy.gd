@@ -9,6 +9,8 @@ const SyncUtil = preload("res://scripts/net/sync_util.gd")
 const GRAVITY := 20.0
 const RETARGET_TIME := 0.5
 const REPATH_TIME := 0.25
+const PUSH_DECAY := 18.0
+const MAX_PUSH := 12.0
 
 # Todos os números são nossos e podem ser ajustados livremente.
 const KINDS := {
@@ -29,6 +31,7 @@ const KINDS := {
 	"brute": {
 		"label": "Brutamontes", "hp": 450.0, "speed": 1.8, "scale": 1.6, "color": Color(0.45, 0.3, 0.25),
 		"range": 2.2, "cooldown": 2.0, "damage": 40.0, "elements": [], "resist": {E.Type.EARTH: 0.5},
+		"push_scale": 0.3,
 	},
 }
 
@@ -39,6 +42,7 @@ var label: Label3D
 var agent: NavigationAgent3D
 var target: Node3D
 var attack_timer := 1.0
+var push_velocity := Vector3.ZERO
 var _retarget_timer := 0.0
 var _repath_timer := 0.0
 
@@ -97,7 +101,7 @@ func _ready() -> void:
 
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation",
-		"Health:hp", "Health:wet", "Health:burning", "Health:chilled",
+		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
 	])
 
 
@@ -115,7 +119,8 @@ func _physics_process(delta: float) -> void:
 		target = _nearest_player()
 
 	var direction := Vector3.ZERO
-	if target != null:
+	var frozen := health.frozen > 0.0
+	if target != null and not frozen:
 		var offset := target.global_position - global_position
 		offset.y = 0.0
 		var distance := offset.length()
@@ -135,10 +140,17 @@ func _physics_process(delta: float) -> void:
 	var speed: float = info.speed
 	if health.chilled > 0.0:
 		speed *= 0.5
-	velocity.x = direction.x * speed
-	velocity.z = direction.z * speed
+	velocity.x = direction.x * speed + push_velocity.x
+	velocity.z = direction.z * speed + push_velocity.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	push_velocity = push_velocity.move_toward(Vector3.ZERO, PUSH_DECAY * delta)
 	move_and_slide()
+
+
+# Empurrão (só no host, que move os inimigos). O brutamontes resiste.
+func push(impulse: Vector3) -> void:
+	impulse.y = 0.0
+	push_velocity = (push_velocity + impulse * info.get("push_scale", 1.0)).limit_length(MAX_PUSH)
 
 
 # Direção do próximo ponto do caminho; sem navmesh, vai em linha reta.

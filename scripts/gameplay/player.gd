@@ -7,6 +7,7 @@ extends CharacterBody3D
 const E = preload("res://scripts/core/elements.gd")
 const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
+const Specials = preload("res://scripts/core/specials.gd")
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 
@@ -23,6 +24,35 @@ const ARC_CHAIN_RANGE := 4.0
 const ARC_MAX_TARGETS := 3
 const AREA_RADIUS := 4.0
 const PLAYER_COLORS := [Color(0.3, 0.35, 0.9), Color(0.25, 0.75, 0.35), Color(0.9, 0.55, 0.15), Color(0.65, 0.3, 0.85)]
+
+# Projétil carregado: segurar até CHARGE_TIME leva o poder de MIN a MAX.
+const CHARGE_TIME := 1.2
+const PROJECTILE_POWER := Vector2(0.6, 2.0)
+const PROJECTILE_SPEED := Vector2(14.0, 28.0)
+
+# Golpe com a arma.
+const WEAPON_RANGE := 2.3
+const WEAPON_ANGLE := 1.05  # 60 graus para cada lado
+const WEAPON_DAMAGE := 20.0
+const WEAPON_ELEMENT_SCALE := 0.8
+const WEAPON_COOLDOWN := 0.6
+const WEAPON_PUSH := 4.0
+
+# Empurrão.
+const PUSH_DECAY := 18.0
+const MAX_PUSH := 12.0
+const SPRAY_WATER_PUSH := 25.0  # por segundo, por Água na fila
+const AREA_WATER_PUSH := 6.0
+
+# Feitiços especiais.
+const ARENA_LIMIT := 18.5
+const METEOR_RANGE := 14.0
+const TELEPORT_RANGE := 10.0
+const STORM_TIME := 5.0
+const STORM_INTERVAL := 0.5
+const STORM_RANGE := 14.0
+const FROST_RADIUS := 10.0
+const FROST_TIME := 3.5
 
 # Ações configuráveis (ver scripts/ui/keybinds.gd) -> elemento.
 const ELEMENT_ACTIONS := {
@@ -44,19 +74,24 @@ var peer_id := 1
 var camera: Camera3D
 var health: Health
 var aim_point := Vector3.ZERO
+var push_velocity := Vector3.ZERO   # empurrão, aplicado pelo dono no movimento
 
 # Estado decidido pelo host e sincronizado para todos (HUD e visual).
 var queue_view: Array = []
 var fx_shape: int = SpellResolver.Shape.NONE
 var fx_element := 0
-var fx_length := 0.0
+var fx_length := 0.0   # comprimento do efeito; no projétil, a carga (0 a 1)
 var fx_width := 0.3
+var special_cooldowns := {}
 
 # Só usados no host.
 var queue := ElementQueue.new()
 var channel_elements: Array = []
 var channel_shape: int = SpellResolver.Shape.NONE
 var channel_time := 0.0
+var weapon_timer := 0.0
+var storm_time := 0.0
+var storm_tick := 0.0
 var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido de lançar
 
 var body: MeshInstance3D
@@ -104,8 +139,9 @@ func _ready() -> void:
 
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
-		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width",
+		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width", ".:special_cooldowns",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
+		"Health:frozen", "Health:ward", "Health:ward_elements",
 	])
 	set_multiplayer_authority(peer_id, false)
 
@@ -128,15 +164,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		request_cast.rpc_id(1, mode, true, _forward())
 	elif event.is_action_released("cast_forward"):
 		request_cast.rpc_id(1, CastMode.FORWARD, false, _forward())
-	elif event.is_action_pressed("cast_self") or (event is InputEventMouseButton 			and event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed):
+	elif event.is_action_pressed("cast_self") or _is_middle_click(event):
 		request_cast.rpc_id(1, CastMode.SELF, true, _forward())
+	elif event.is_action_pressed("cast_weapon"):
+		request_weapon.rpc_id(1, _forward())
+	elif event.is_action_pressed("cast_special"):
+		request_special.rpc_id(1, aim_point)
+
+
+func _is_middle_click(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed
 
 
 func _physics_process(delta: float) -> void:
 	if is_local():
 		_move_local(delta)
-	if multiplayer.is_server() and _is_channeling():
-		_update_channel(delta)
+	if multiplayer.is_server():
+		_update_host(delta)
 
 
 func _process(_delta: float) -> void:
@@ -163,6 +207,7 @@ func _move_local(delta: float) -> void:
 	_update_aim()
 	if health.dead:
 		velocity = Vector3.ZERO
+		push_velocity = Vector3.ZERO
 		return
 
 	# Andar: teclas configuradas/setas (para cima = para o fundo da tela) ou até o cursor.
@@ -180,18 +225,21 @@ func _move_local(delta: float) -> void:
 		direction = Vector3(keys.x, 0.0, keys.y)
 
 	var speed := SPEED
-	if health.chilled > 0.0:
+	if health.frozen > 0.0:
+		speed = 0.0
+	elif health.chilled > 0.0:
 		speed *= 0.5
 	if fx_shape != SpellResolver.Shape.NONE:
 		speed *= 0.4
 	direction = direction.normalized()
-	velocity.x = direction.x * speed
-	velocity.z = direction.z * speed
+	velocity.x = direction.x * speed + push_velocity.x
+	velocity.z = direction.z * speed + push_velocity.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	push_velocity = push_velocity.move_toward(Vector3.ZERO, PUSH_DECAY * delta)
 	move_and_slide()
 
 	var flat_aim := Vector3(aim_point.x, global_position.y, aim_point.z)
-	if flat_aim.distance_to(global_position) > 0.1:
+	if health.frozen <= 0.0 and flat_aim.distance_to(global_position) > 0.1:
 		look_at(flat_aim, Vector3.UP)
 
 
@@ -206,6 +254,27 @@ func _update_aim() -> void:
 		aim_point = hit
 
 
+# --- Empurrão ----------------------------------------------------------------
+
+# Chamado no host. O movimento é do dono, então o empurrão vai para o PC dele.
+func push(impulse: Vector3) -> void:
+	impulse.y = 0.0
+	if is_local():
+		_add_push(impulse)
+	else:
+		receive_push.rpc_id(peer_id, impulse)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func receive_push(impulse: Vector3) -> void:
+	if multiplayer.get_remote_sender_id() == 1:
+		_add_push(impulse)
+
+
+func _add_push(impulse: Vector3) -> void:
+	push_velocity = (push_velocity + impulse).limit_length(MAX_PUSH)
+
+
 # --- Pedidos ao host ---------------------------------------------------------
 
 @rpc("any_peer", "call_local", "reliable")
@@ -218,35 +287,66 @@ func request_element(element: int) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func request_cast(mode: int, pressed: bool, aim: Vector3) -> void:
+	if not multiplayer.is_server() or _sender() != peer_id:
+		return
+	# Soltar o botão sempre encerra o feitiço, mesmo se o mago caiu ou congelou.
+	if not pressed:
+		_set_cast_dir(aim)
+		_stop_channel()
+		_cast_dir = Vector3.ZERO
+		return
 	if not _from_owner():
 		return
-	# Usa a mira que o dono viu no momento do clique (a rotação sincronizada pode atrasar).
-	aim.y = 0.0
-	if aim.length() > 0.1:
-		_cast_dir = aim.normalized()
-	_handle_cast(mode, pressed)
-	_cast_dir = Vector3.ZERO
-
-
-func _handle_cast(mode: int, pressed: bool) -> void:
-	if not pressed:
-		_stop_channel()
-	elif mode == CastMode.FORWARD:
+	_set_cast_dir(aim)
+	if mode == CastMode.FORWARD:
 		_cast_forward()
 	elif mode == CastMode.AREA:
 		_cast_area()
 	elif mode == CastMode.SELF:
 		_cast_self()
+	_cast_dir = Vector3.ZERO
 
 
-# O host só aceita pedidos vindos do dono deste mago.
-func _from_owner() -> bool:
-	if not multiplayer.is_server() or health.dead:
-		return false
+@rpc("any_peer", "call_local", "reliable")
+func request_weapon(aim: Vector3) -> void:
+	if not _from_owner() or _is_channeling() or weapon_timer > 0.0:
+		return
+	_set_cast_dir(aim)
+	_swing_weapon()
+	_cast_dir = Vector3.ZERO
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_special(target_point: Vector3) -> void:
+	if not _from_owner() or _is_channeling():
+		return
+	var id := Specials.match_special(queue.elements)
+	if id.is_empty() or special_cooldowns.get(id, 0.0) > 0.0:
+		return
+	if _cast_special(id, target_point):
+		var cooldowns := special_cooldowns.duplicate()
+		cooldowns[id] = Specials.SPECIALS[id].cooldown
+		special_cooldowns = cooldowns
+		_clear_queue()
+
+
+func _sender() -> int:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender == 0:
-		sender = multiplayer.get_unique_id()
-	return sender == peer_id
+	return multiplayer.get_unique_id() if sender == 0 else sender
+
+
+# O host só aceita pedidos do dono deste mago, e só se ele puder agir.
+func _from_owner() -> bool:
+	if not multiplayer.is_server() or health.dead or health.frozen > 0.0:
+		return false
+	return _sender() == peer_id
+
+
+# Usa a mira que o dono viu no momento do clique (a rotação sincronizada pode atrasar).
+func _set_cast_dir(aim: Vector3) -> void:
+	aim.y = 0.0
+	if aim.length() > 0.1:
+		_cast_dir = aim.normalized()
 
 
 func _publish_queue() -> void:
@@ -270,25 +370,18 @@ func _cast_forward() -> void:
 		return
 	var elements := queue.elements.duplicate()
 	var shape := SpellResolver.resolve_shape(elements)
-	if shape == SpellResolver.Shape.PROJECTILE:
-		get_parent().spawn_entity({
-			"type": "projectile",
-			"pos": global_position + Vector3.UP,
-			"dir": _forward(),
-			"elements": elements,
-			"caster": String(name),
-		})
+	if shape == SpellResolver.Shape.BARRIER:
+		_spawn_barrier(global_position + _forward() * 2.5, elements)
 		_clear_queue()
-	elif shape == SpellResolver.Shape.BARRIER:
-		_spawn_barrier(global_position + _forward() * 2.5)
-		_clear_queue()
-	else:
-		# Spray, beam e arco são contínuos enquanto o botão estiver pressionado.
-		channel_elements = elements
-		channel_shape = shape
-		channel_time = 0.0
-		fx_shape = shape
-		fx_element = elements[0]
+		return
+	# Projétil carrega enquanto o botão estiver pressionado; spray, beam e arco
+	# ficam ativos enquanto ele estiver pressionado.
+	channel_elements = elements
+	channel_shape = shape
+	channel_time = 0.0
+	fx_shape = shape
+	fx_element = elements[0]
+	fx_length = 0.0
 
 
 func _cast_area() -> void:
@@ -299,14 +392,17 @@ func _cast_area() -> void:
 	if E.Type.SHIELD in elements:
 		for i in 8:
 			var angle := TAU * i / 8.0
-			_spawn_barrier(global_position + Vector3(cos(angle), 0.0, sin(angle)) * 3.0)
+			_spawn_barrier(global_position + Vector3(cos(angle), 0.0, sin(angle)) * 3.0, elements)
 		return
+	var water := elements.count(E.Type.WATER)
 	for target in _damageables():
 		var offset: Vector3 = target.global_position - global_position
 		offset.y = 0.0
 		if offset.length() <= AREA_RADIUS:
 			_hit(target, elements, 1.0)
-	show_area_flash.rpc(elements[0])
+			if water > 0 and offset.length() > 0.01:
+				_push(target, offset.normalized() * AREA_WATER_PUSH * water)
+	show_flash.rpc(global_position, AREA_RADIUS, elements[0])
 
 
 func _cast_self() -> void:
@@ -315,7 +411,13 @@ func _cast_self() -> void:
 	var elements := queue.elements.duplicate()
 	_clear_queue()
 	if E.Type.SHIELD in elements:
-		health.shielded = Health.SELF_SHIELD_TIME
+		# Escudo sozinho reduz o dano; com outros elementos, protege contra eles.
+		var others := elements.filter(func(element): return element != E.Type.SHIELD)
+		if others.is_empty():
+			health.shielded = Health.SELF_SHIELD_TIME
+		else:
+			health.set_ward(others)
+		return
 	health.apply_elements(elements, 1.0)
 
 
@@ -324,7 +426,49 @@ func _clear_queue() -> void:
 	_publish_queue()
 
 
-# --- Feitiços contínuos (host) ----------------------------------------------
+# Golpe em cone curto à frente; leva junto os elementos da fila (menos Escudo).
+func _swing_weapon() -> void:
+	weapon_timer = WEAPON_COOLDOWN
+	var elements := queue.elements.filter(func(element): return element != E.Type.SHIELD)
+	if not queue.is_empty():
+		_clear_queue()
+	for target in _damageables():
+		var offset: Vector3 = target.global_position - global_position
+		offset.y = 0.0
+		if offset.length() <= WEAPON_RANGE and offset.length() > 0.01 \
+				and _forward().angle_to(offset.normalized()) < WEAPON_ANGLE:
+			var target_health = target.get_node_or_null("Health")
+			if target_health != null:
+				target_health.damage(WEAPON_DAMAGE)
+				if not elements.is_empty():
+					target_health.apply_elements(elements, WEAPON_ELEMENT_SCALE)
+			_push(target, _forward() * WEAPON_PUSH)
+	show_swing.rpc(elements[0] if not elements.is_empty() else -1, _forward())
+
+
+# --- Atualização do host -----------------------------------------------------
+
+func _update_host(delta: float) -> void:
+	weapon_timer = maxf(weapon_timer - delta, 0.0)
+	_update_cooldowns(delta)
+	_update_storm(delta)
+	if _is_channeling():
+		if health.frozen > 0.0:
+			_stop_channel()
+		else:
+			_update_channel(delta)
+
+
+func _update_cooldowns(delta: float) -> void:
+	if special_cooldowns.is_empty():
+		return
+	var cooldowns := {}
+	for id in special_cooldowns:
+		var left: float = special_cooldowns[id] - delta
+		if left > 0.0:
+			cooldowns[id] = left
+	special_cooldowns = cooldowns
+
 
 func _update_channel(delta: float) -> void:
 	channel_time += delta
@@ -334,15 +478,20 @@ func _update_channel(delta: float) -> void:
 
 	var length := 0.0
 	var width := 0.3
-	if channel_shape == SpellResolver.Shape.SPRAY:
+	if channel_shape == SpellResolver.Shape.PROJECTILE:
+		length = clampf(channel_time / CHARGE_TIME, 0.0, 1.0)
+	elif channel_shape == SpellResolver.Shape.SPRAY:
 		length = SPRAY_RANGE
 		width = 2.0
+		var water := channel_elements.count(E.Type.WATER)
 		for target in _damageables():
 			var offset: Vector3 = target.global_position - global_position
 			offset.y = 0.0
 			if offset.length() > 0.01 and offset.length() <= SPRAY_RANGE \
 					and _forward().angle_to(offset.normalized()) < SPRAY_ANGLE:
 				_hit(target, channel_elements, delta)
+				if water > 0:
+					_push(target, offset.normalized() * SPRAY_WATER_PUSH * water * delta)
 	elif channel_shape == SpellResolver.Shape.BEAM:
 		var origin := global_position + Vector3.UP
 		var result := _raycast(origin, origin + _forward() * BEAM_RANGE)
@@ -362,13 +511,32 @@ func _update_channel(delta: float) -> void:
 	fx_width = width
 
 
+# Encerra o feitiço contínuo; o projétil carregado é disparado aqui.
 func _stop_channel() -> void:
 	if not _is_channeling():
 		return
+	if channel_shape == SpellResolver.Shape.PROJECTILE:
+		_fire_projectile(channel_elements, clampf(channel_time / CHARGE_TIME, 0.0, 1.0))
+	_cancel_channel()
+
+
+func _cancel_channel() -> void:
 	channel_shape = SpellResolver.Shape.NONE
 	channel_elements = []
 	fx_shape = SpellResolver.Shape.NONE
 	_clear_queue()
+
+
+func _fire_projectile(elements: Array, charge: float) -> void:
+	get_parent().spawn_entity({
+		"type": "projectile",
+		"pos": global_position + Vector3.UP,
+		"dir": _forward(),
+		"elements": elements,
+		"caster": String(name),
+		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge),
+		"speed": lerpf(PROJECTILE_SPEED.x, PROJECTILE_SPEED.y, charge),
+	})
 
 
 # Alvo mais próximo à frente, depois salta para até 2 alvos vizinhos.
@@ -399,6 +567,80 @@ func _arc_targets() -> Array:
 	return targets
 
 
+# --- Feitiços especiais (host) -----------------------------------------------
+
+# Devolve false se não deu para lançar (ex.: teleporte para dentro de uma parede).
+func _cast_special(id: String, target_point: Vector3) -> bool:
+	if id == "meteor":
+		get_parent().spawn_entity({"type": "meteor", "pos": _clamp_target(target_point, METEOR_RANGE)})
+	elif id == "teleport":
+		var destination := _clamp_target(target_point, TELEPORT_RANGE)
+		if not _is_free_spot(destination):
+			return false
+		show_flash.rpc(global_position, 1.2, E.Type.ARCANE)
+		show_flash.rpc(destination, 1.2, E.Type.ARCANE)
+		do_teleport.rpc_id(peer_id, destination)
+	elif id == "storm":
+		storm_time = STORM_TIME
+		storm_tick = 0.0
+	elif id == "frost":
+		for enemy in get_tree().get_nodes_in_group("enemies"):
+			if enemy.global_position.distance_to(global_position) <= FROST_RADIUS:
+				enemy.health.freeze(FROST_TIME)
+		show_flash.rpc(global_position, FROST_RADIUS, E.Type.COLD)
+	elif id == "blessing":
+		for player in get_tree().get_nodes_in_group("players"):
+			player.health.revive()
+			player.health.apply_elements([E.Type.LIFE, E.Type.LIFE], 1.0)
+			show_flash.rpc(player.global_position, 1.5, E.Type.LIFE)
+	return true
+
+
+func _update_storm(delta: float) -> void:
+	if storm_time <= 0.0:
+		return
+	storm_time -= delta
+	storm_tick -= delta
+	if storm_tick > 0.0:
+		return
+	storm_tick = STORM_INTERVAL
+	var targets := get_tree().get_nodes_in_group("enemies").filter(
+		func(enemy): return not enemy.is_queued_for_deletion() \
+			and enemy.global_position.distance_to(global_position) <= STORM_RANGE)
+	if targets.is_empty():
+		return
+	var target: Node3D = targets.pick_random()
+	target.health.apply_elements([E.Type.LIGHTNING, E.Type.LIGHTNING], 1.0)
+	show_bolt.rpc(target.global_position)
+
+
+# Ponto no chão a no máximo `max_range` do mago, dentro da arena.
+func _clamp_target(point: Vector3, max_range: float) -> Vector3:
+	var offset := point - global_position
+	offset.y = 0.0
+	if offset.length() > max_range:
+		offset = offset.normalized() * max_range
+	var target := global_position + offset
+	return Vector3(clampf(target.x, -ARENA_LIMIT, ARENA_LIMIT), 0.0, clampf(target.z, -ARENA_LIMIT, ARENA_LIMIT))
+
+
+func _is_free_spot(point: Vector3) -> bool:
+	var shape := CapsuleShape3D.new()
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.transform = Transform3D(Basis(), point + Vector3.UP * 1.05)
+	query.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+@rpc("any_peer", "call_local", "reliable")
+func do_teleport(destination: Vector3) -> void:
+	if _sender() != 1:
+		return
+	global_position = destination
+	push_velocity = Vector3.ZERO
+
+
 # --- Visual (todos os peers) -------------------------------------------------
 
 func _update_effect_visual() -> void:
@@ -412,26 +654,65 @@ func _update_effect_visual() -> void:
 		effect_mesh.material_override = E.make_material(color)
 		_shown_fx_element = fx_element
 	var box := effect_mesh.mesh as BoxMesh
-	box.size = Vector3(fx_width, 0.3, maxf(fx_length, 0.01))
-	effect_mesh.position = Vector3(0.0, 1.0, -fx_length / 2.0)
+	if fx_shape == SpellResolver.Shape.PROJECTILE:
+		# Carga: a pedra/gelo cresce na frente do mago.
+		box.size = Vector3.ONE * (0.25 + 0.45 * fx_length)
+		effect_mesh.position = Vector3(0.0, 1.0, -0.9)
+	else:
+		box.size = Vector3(fx_width, 0.3, maxf(fx_length, 0.01))
+		effect_mesh.position = Vector3(0.0, 1.0, -fx_length / 2.0)
 
 
+# Disco colorido rápido no chão (área, teleporte, bênção, inverno).
 @rpc("any_peer", "call_local", "reliable")
-func show_area_flash(element: int) -> void:
-	if multiplayer.get_remote_sender_id() > 1:
+func show_flash(at: Vector3, radius: float, element: int) -> void:
+	if _sender() != 1:
 		return
 	var flash := MeshInstance3D.new()
 	var disc := CylinderMesh.new()
-	disc.top_radius = AREA_RADIUS
-	disc.bottom_radius = AREA_RADIUS
+	disc.top_radius = radius
+	disc.bottom_radius = radius
 	disc.height = 0.05
 	flash.mesh = disc
 	var color: Color = E.COLORS[element]
 	color.a = 0.4
 	flash.material_override = E.make_material(color)
-	add_child(flash)
-	flash.position.y = 0.05
-	get_tree().create_timer(0.25).timeout.connect(flash.queue_free)
+	get_parent().add_child(flash)
+	flash.global_position = Vector3(at.x, 0.05, at.z)
+	get_tree().create_timer(0.3).timeout.connect(flash.queue_free)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func show_swing(element: int, direction: Vector3) -> void:
+	if _sender() != 1:
+		return
+	var swing := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(WEAPON_RANGE * 1.2, 0.15, 0.4)
+	swing.mesh = box
+	var color: Color = E.COLORS[element] if element >= 0 else Color(0.9, 0.9, 0.95)
+	color.a = 0.7
+	swing.material_override = E.make_material(color)
+	get_parent().add_child(swing)
+	var center := global_position + direction.normalized() * (WEAPON_RANGE * 0.6)
+	swing.global_position = Vector3(center.x, 1.0, center.z)
+	swing.look_at(swing.global_position + direction, Vector3.UP)
+	swing.rotate_object_local(Vector3.UP, PI / 2.0)
+	get_tree().create_timer(0.12).timeout.connect(swing.queue_free)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func show_bolt(at: Vector3) -> void:
+	if _sender() != 1:
+		return
+	var bolt := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.25, 12.0, 0.25)
+	bolt.mesh = box
+	bolt.material_override = E.make_material(E.COLORS[E.Type.LIGHTNING])
+	get_parent().add_child(bolt)
+	bolt.global_position = Vector3(at.x, 6.0, at.z)
+	get_tree().create_timer(0.15).timeout.connect(bolt.queue_free)
 
 
 # --- Utilidades (host) -------------------------------------------------------
@@ -451,21 +732,27 @@ func _hit(target: Node, elements: Array, scale: float) -> void:
 		target_health.apply_elements(elements, scale)
 
 
+func _push(target: Node, impulse: Vector3) -> void:
+	if target.has_method("push"):
+		target.push(impulse)
+
+
 func _raycast(from: Vector3, to: Vector3) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.exclude = [get_rid()]
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 
-func _spawn_barrier(at: Vector3) -> void:
+func _spawn_barrier(at: Vector3, elements: Array) -> void:
 	var offset := at - global_position
 	get_parent().spawn_entity({
 		"type": "barrier",
 		"pos": Vector3(at.x, 0.0, at.z),
 		"yaw": atan2(offset.x, offset.z),
+		"elements": elements,
 	})
 
 
 func _on_died() -> void:
-	_stop_channel()
-	_clear_queue()
+	_cancel_channel()
+	storm_time = 0.0

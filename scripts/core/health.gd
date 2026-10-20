@@ -1,4 +1,4 @@
-# Vida + estados (molhado, queimando, resfriado, escudo) e suas interações.
+# Vida + estados (molhado, queimando, resfriado, congelado, escudo, proteção) e interações.
 extends Node
 
 const E = preload("res://scripts/core/elements.gd")
@@ -12,6 +12,8 @@ const BURN_TIME := 4.0
 const CHILL_TIME := 3.0
 const SELF_SHIELD_TIME := 5.0
 const REVIVE_FRACTION := 0.5
+const FREEZE_TIME := 2.5
+const WARD_TIME := 10.0
 
 @export var max_hp := 100.0
 # Quem pode ser levantado com Vida depois de cair (os magos).
@@ -24,6 +26,9 @@ var wet := 0.0
 var burning := 0.0
 var chilled := 0.0
 var shielded := 0.0
+var frozen := 0.0            # não anda nem ataca
+var ward := 0.0              # tempo restante da proteção elemental
+var ward_elements: Array = []
 var dead := false
 
 
@@ -37,6 +42,9 @@ func reset() -> void:
 	burning = 0.0
 	chilled = 0.0
 	shielded = 0.0
+	frozen = 0.0
+	ward = 0.0
+	ward_elements = []
 	dead = false
 
 
@@ -49,6 +57,19 @@ func apply_elements(elements: Array, scale: float) -> void:
 # Dano direto, sem elemento (ex.: golpe corpo a corpo).
 func damage(amount: float) -> void:
 	_change_hp(-amount)
+
+
+# Proteção elemental: imune aos elementos dados por WARD_TIME segundos.
+func set_ward(elements: Array) -> void:
+	ward_elements = elements.duplicate()
+	ward = WARD_TIME
+
+
+func freeze(duration: float) -> void:
+	if dead:
+		return
+	burning = 0.0
+	frozen = maxf(frozen, duration)
 
 
 func revive() -> void:
@@ -64,6 +85,8 @@ func _apply(element: int, scale: float) -> void:
 		if element == E.Type.LIFE and revivable:
 			revive()
 		return
+	if ward > 0.0 and element in ward_elements:
+		return
 	var multiplier: float = resistances.get(element, 1.0)
 	if multiplier <= 0.0:
 		return
@@ -72,8 +95,10 @@ func _apply(element: int, scale: float) -> void:
 		burning = 0.0
 		wet = WET_TIME
 	elif element == E.Type.FIRE:
-		# Fogo seca quem está molhado em vez de incendiar.
-		if wet > 0.0:
+		# Fogo descongela; em alvo molhado, seca em vez de incendiar.
+		if frozen > 0.0:
+			frozen = 0.0
+		elif wet > 0.0:
 			wet = 0.0
 		else:
 			burning = BURN_TIME
@@ -81,8 +106,16 @@ func _apply(element: int, scale: float) -> void:
 	elif element == E.Type.COLD or element == E.Type.ICE:
 		burning = 0.0
 		chilled = CHILL_TIME
+		# Frio em alvo molhado congela.
+		if wet > 0.0:
+			wet = 0.0
+			frozen = FREEZE_TIME
 	elif element == E.Type.LIGHTNING and wet > 0.0:
 		amount *= 2.0
+	elif element == E.Type.EARTH and frozen > 0.0:
+		# Terra estilhaça quem está congelado.
+		amount *= 2.0
+		frozen = 0.0
 	_change_hp(-amount)
 
 
@@ -104,6 +137,8 @@ func _process(delta: float) -> void:
 	wet = maxf(wet - delta, 0.0)
 	chilled = maxf(chilled - delta, 0.0)
 	shielded = maxf(shielded - delta, 0.0)
+	frozen = maxf(frozen - delta, 0.0)
+	ward = maxf(ward - delta, 0.0)
 	if burning > 0.0:
 		burning = maxf(burning - delta, 0.0)
 		_change_hp(-BURN_DPS * delta)
@@ -117,6 +152,13 @@ func status_text() -> String:
 		parts.append("queimando")
 	if chilled > 0.0:
 		parts.append("resfriado")
+	if frozen > 0.0:
+		parts.append("congelado")
 	if shielded > 0.0:
 		parts.append("protegido")
+	if ward > 0.0:
+		var names := PackedStringArray()
+		for element in ward_elements:
+			names.append(E.NAMES[element])
+		parts.append("imune a " + "/".join(names))
 	return ", ".join(parts)
