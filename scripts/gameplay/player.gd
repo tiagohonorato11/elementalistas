@@ -24,16 +24,20 @@ const ARC_MAX_TARGETS := 3
 const AREA_RADIUS := 4.0
 const PLAYER_COLORS := [Color(0.3, 0.35, 0.9), Color(0.25, 0.75, 0.35), Color(0.9, 0.55, 0.15), Color(0.65, 0.3, 0.85)]
 
-# Teclas físicas (funcionam em qualquer layout de teclado).
-const ELEMENT_KEYS := {
-	KEY_Q: E.Type.WATER,
-	KEY_W: E.Type.LIFE,
-	KEY_E: E.Type.SHIELD,
-	KEY_R: E.Type.COLD,
-	KEY_A: E.Type.LIGHTNING,
-	KEY_S: E.Type.ARCANE,
-	KEY_D: E.Type.EARTH,
-	KEY_F: E.Type.FIRE,
+# Ações configuráveis (ver scripts/ui/keybinds.gd) -> elemento.
+const ELEMENT_ACTIONS := {
+	"element_water": E.Type.WATER,
+	"element_life": E.Type.LIFE,
+	"element_shield": E.Type.SHIELD,
+	"element_cold": E.Type.COLD,
+	"element_lightning": E.Type.LIGHTNING,
+	"element_arcane": E.Type.ARCANE,
+	"element_earth": E.Type.EARTH,
+	"element_fire": E.Type.FIRE,
+}
+# As setas sempre andam, além das teclas configuradas.
+const ARROW_KEYS := {
+	KEY_UP: Vector2.UP, KEY_DOWN: Vector2.DOWN, KEY_LEFT: Vector2.LEFT, KEY_RIGHT: Vector2.RIGHT,
 }
 
 var peer_id := 1
@@ -115,18 +119,17 @@ func is_local() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_local() or health.dead:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var key: int = event.physical_keycode
-		if ELEMENT_KEYS.has(key):
-			request_element.rpc_id(1, ELEMENT_KEYS[key])
-		elif key == KEY_SPACE:
-			request_cast.rpc_id(1, CastMode.SELF, true, _forward())
-	elif event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_RIGHT:
-			var mode := CastMode.AREA if event.shift_pressed else CastMode.FORWARD
-			request_cast.rpc_id(1, mode, event.pressed, _forward())
-		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
-			request_cast.rpc_id(1, CastMode.SELF, true, _forward())
+	for action in ELEMENT_ACTIONS:
+		if event.is_action_pressed(action):
+			request_element.rpc_id(1, ELEMENT_ACTIONS[action])
+			return
+	if event.is_action_pressed("cast_forward"):
+		var mode := CastMode.AREA if Input.is_action_pressed("area_modifier") else CastMode.FORWARD
+		request_cast.rpc_id(1, mode, true, _forward())
+	elif event.is_action_released("cast_forward"):
+		request_cast.rpc_id(1, CastMode.FORWARD, false, _forward())
+	elif event.is_action_pressed("cast_self") or (event is InputEventMouseButton 			and event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed):
+		request_cast.rpc_id(1, CastMode.SELF, true, _forward())
 
 
 func _physics_process(delta: float) -> void:
@@ -162,16 +165,19 @@ func _move_local(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 
-	# Andar: segurar o botão esquerdo (vai em direção ao mouse) ou setas do teclado.
+	# Andar: teclas configuradas/setas (para cima = para o fundo da tela) ou até o cursor.
 	var direction := Vector3.ZERO
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+	if Input.is_action_pressed("move_to_cursor"):
 		direction = aim_point - global_position
 		direction.y = 0.0
 		if direction.length() < 0.3:
 			direction = Vector3.ZERO
-	var arrows := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
-	if arrows != Vector2.ZERO:
-		direction = Vector3(arrows.x, 0.0, arrows.y)
+	var keys := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	for key in ARROW_KEYS:
+		if Input.is_physical_key_pressed(key):
+			keys += ARROW_KEYS[key]
+	if keys != Vector2.ZERO:
+		direction = Vector3(keys.x, 0.0, keys.y)
 
 	var speed := SPEED
 	if health.chilled > 0.0:

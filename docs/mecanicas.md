@@ -3,16 +3,18 @@
 Documento de design escrito com nossas próprias palavras. A referência de gênero são jogos co-op de magos elementais (como Magicka 2), estudados **apenas por observação**. Nenhum código, asset, texto ou nome do jogo original é usado aqui. Todos os números são nossos e ficam em `scripts/core/elements.gd`.
 
 ## Elementos e teclas
+As teclas abaixo são o padrão; cada jogador pode trocá-las em **Configurações**, no lobby. As escolhas ficam salvas em `user://settings.cfg`.
+
 | Tecla | Elemento | Dano base* | Efeito |
 |---|---|---|---|
 | Q | Água | 4 | molha, apaga fogo |
-| W | Vida | −30 (cura) | — |
-| E | Escudo | 0 | barreira / proteção |
-| R | Frio | 10 | resfria (lentidão), apaga fogo |
-| A | Raio | 30 | dano dobrado em alvo molhado |
-| S | Arcano | 35 | — |
-| D | Terra | 40 | — |
-| F | Fogo | 15 | incendeia (8/s por 4s) ou seca alvo molhado |
+| E | Vida | −30 (cura) | — |
+| R | Escudo | 0 | barreira / proteção |
+| F | Frio | 10 | resfria (lentidão), apaga fogo |
+| Z | Raio | 30 | dano dobrado em alvo molhado |
+| X | Arcano | 35 | — |
+| C | Terra | 40 | — |
+| V | Fogo | 15 | incendeia (8/s por 4s) ou seca alvo molhado |
 | — | Vapor (Água+Fogo) | 20 | molha |
 | — | Gelo (Água+Frio) | 25 | resfria |
 
@@ -42,7 +44,7 @@ Ao adicionar um elemento, nesta ordem:
 - **À frente** (botão direito): projétil e barreira saem na hora. Spray, beam e arco ficam ativos enquanto o botão estiver segurado, até 3 segundos.
 - **Área** (Shift + botão direito): aplica os elementos a todos num raio de 4 m. Com Escudo, cria um anel de barreiras.
 - **Em si mesmo** (botão do meio ou Espaço): aplica os elementos no próprio mago. Vida cura, Fogo queima! Escudo reduz o dano recebido pela metade por 5 s.
-- **Andar**: segurar o botão esquerdo (o mago vai em direção ao mouse) ou usar as setas. Isso substitui o WASD do plano, porque W, A, S e D são teclas de elemento.
+- **Andar**: WASD ou setas (para cima = para o fundo da tela), ou segurar o botão esquerdo (o mago vai em direção ao mouse). Os elementos ficam nas teclas em volta do WASD: Q E R F / Z X C V.
 
 ## Inimigos (`scripts/gameplay/enemy.gd`)
 | Tipo | Vida | Ataque | Particularidade |
@@ -58,7 +60,7 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - 5 s de preparação e depois **5 ondas** crescentes. Cada jogador além do primeiro adiciona 50% de inimigos.
 - Entre ondas, há 6 s de pausa, e quem caiu volta com metade da vida.
 - **Cair e reviver:** com a vida em 0, o mago cai, não age e não recebe dano. Um aliado o levanta lançando qualquer feitiço com **Vida** nele (beam, área etc.).
-- **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo.
+- **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo (só na tela de fim).
 
 ## Ainda por fazer
 - [ ] Encantar arma
@@ -69,12 +71,12 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - [ ] Mais arenas e um chefe
 
 ## Checklist de teste manual
-- [ ] Q + F mostra "Vapor" no HUD; Q + A esvazia a fila
-- [ ] D + botão direito: projétil acerta um inimigo (−40)
-- [ ] F + botão direito segurado: spray em cone; o inimigo fica "queimando"
-- [ ] Q no inimigo e depois A: dano dobrado
-- [ ] E + botão direito: barreira à frente que some em 6 s
-- [ ] W + Espaço: cura o próprio mago
+- [ ] Q + V mostra "Vapor" no HUD; Q + Z esvazia a fila
+- [ ] C + botão direito: projétil acerta um inimigo (−40)
+- [ ] V + botão direito segurado: spray em cone; o inimigo fica "queimando"
+- [ ] Q no inimigo e depois Z: dano dobrado
+- [ ] R + botão direito: barreira à frente que some em 6 s
+- [ ] E + Espaço: cura o próprio mago
 - [ ] Salamandra não sofre dano de Fogo; Água ou Frio a derrubam mais rápido
-- [ ] Um amigo cai; W + botão direito (beam de Vida) nele o levanta com metade da vida
+- [ ] Um amigo cai; E + botão direito (beam de Vida) nele o levanta com metade da vida
 - [ ] Todos caídos: aparece "DERROTA"; o host aperta R e a partida recomeça

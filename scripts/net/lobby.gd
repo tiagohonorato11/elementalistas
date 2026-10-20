@@ -54,6 +54,7 @@ func _build_ui() -> void:
 	column.add_child(menu_box)
 	_button(menu_box, "Hospedar partida", _on_host_pressed)
 	_button(menu_box, "Jogar sozinho", _on_solo_pressed)
+	_button(menu_box, "Configurações", func(): get_tree().change_scene_to_file("res://scenes/settings.tscn"))
 	_label(menu_box, "Partidas encontradas no Wi-Fi:", 18)
 	games_box = VBoxContainer.new()
 	menu_box.add_child(games_box)

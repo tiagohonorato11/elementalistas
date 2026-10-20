@@ -7,7 +7,7 @@ Jogo co-op de magos elementais em Godot 4, inspirado no gênero de Magicka 2. É
 2. Abra o Godot → **Import** → selecione o arquivo `project.godot` desta pasta.
 3. Aperte **F5** para jogar.
 
-Os controles aparecem no canto da tela. Detalhes em `docs/mecanicas.md`.
+Os controles aparecem no canto da tela e podem ser trocados em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
 ## Jogar com amigos no mesmo Wi-Fi
 1. Todos precisam do jogo no PC: o Godot e esta pasta, ou um `.exe` exportado.
@@ -38,6 +38,7 @@ godot --headless --path . res://tests/flow_smoke.tscn
 ## Estrutura
 - `scripts/core/`: regras puras (elementos, fila, forma do feitiço, vida). Ficam fora da cena para serem testáveis e, na Fase 3, rodarem só no host.
 - `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
+- `scripts/ui/`: teclas configuráveis (autoload `Keybinds`) e tela de configurações.
 - `scripts/net/`: rede: lobby, conexão ENet, descoberta na LAN e sincronização.
 - `docs/mecanicas.md`: documento de design.
 

@@ -5,10 +5,6 @@ const E = preload("res://scripts/core/elements.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const GameState = preload("res://scripts/gameplay/game_state.gd")
 
-const HELP := """Elementos: Q Água | W Vida | E Escudo | R Frio | A Raio | S Arcano | D Terra | F Fogo
-Andar: segurar botão esquerdo (ou setas) | Lançar à frente: botão direito (segure para spray/beam/arco)
-Área: Shift + botão direito | Em si mesmo: botão do meio ou Espaço | Esc: sair para o lobby"""
-
 var player: Node
 var game_state: Node
 var status_label: Label
@@ -21,7 +17,7 @@ func _ready() -> void:
 	status_label.position = Vector2(16, 16)
 	var help := _make_label(16)
 	help.position = Vector2(16, 630)
-	help.text = HELP
+	help.text = _help_text()
 
 	wave_label = _make_label(26)
 	wave_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -86,7 +82,25 @@ func _update_wave() -> void:
 		wave_label.text = "Onda %d/%d" % [game_state.wave, total]
 		banner.text = "DERROTA...\n%s" % restart_hint
 	if banner.text.is_empty() and is_instance_valid(player) and player.health.dead:
-		banner.text = "Você caiu!\nUm aliado pode te reviver com Vida (W)."
+		banner.text = "Você caiu!\nUm aliado pode te reviver com Vida."
+
+
+# Ajuda montada com as teclas que o jogador configurou.
+func _help_text() -> String:
+	var elements := PackedStringArray()
+	for action in ["element_water", "element_life", "element_shield", "element_cold",
+			"element_lightning", "element_arcane", "element_earth", "element_fire"]:
+		var label: String = Keybinds.ACTIONS.filter(func(a): return a.id == action)[0].label
+		elements.append("%s %s" % [Keybinds.action_text(action), label])
+	var k := func(id): return Keybinds.action_text(id)
+	return "Elementos: %s
+Andar: %s%s%s%s ou setas (ou segurar %s) | Lançar à frente: %s (segure para spray/beam/arco)
+Área: %s + %s | Em si mesmo: %s ou botão do meio | Esc: sair para o lobby" % [
+		" | ".join(elements),
+		k.call("move_up"), k.call("move_left"), k.call("move_down"), k.call("move_right"),
+		k.call("move_to_cursor"), k.call("cast_forward"),
+		k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"),
+	]
 
 
 func _make_label(font_size: int) -> Label:

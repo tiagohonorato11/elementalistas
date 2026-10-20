@@ -21,6 +21,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 [autoload]
 
 Network="*res://scripts/net/network_manager.gd"
+Keybinds="*res://scripts/ui/keybinds.gd"
 
 [display]
 

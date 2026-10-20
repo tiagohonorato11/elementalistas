@@ -6,6 +6,7 @@ const E = preload("res://scripts/core/elements.gd")
 const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Health = preload("res://scripts/core/health.gd")
+const Keybinds = preload("res://scripts/ui/keybinds.gd")
 
 var checks := 0
 var failures := 0
@@ -15,6 +16,7 @@ func _init() -> void:
 	_test_queue()
 	_test_resolver()
 	_test_health()
+	_test_keybinds()
 	print("%d verificações, %d falhas" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -113,3 +115,27 @@ func _test_health() -> void:
 	check(not health.dead and is_equal_approx(health.hp, 50.0), "Vida revive com metade da vida")
 
 	health.free()
+
+
+func _test_keybinds() -> void:
+	var keybinds := Keybinds.new()
+	keybinds.persist = false
+	keybinds.load_defaults()
+	keybinds.apply_all()
+	check(keybinds.bindings.element_water == ["key", KEY_Q], "Água começa no Q")
+
+	keybinds.set_binding("element_water", ["key", KEY_E])
+	check(keybinds.bindings.element_water == ["key", KEY_E], "Água passa para o E")
+	check(keybinds.bindings.element_life == ["key", KEY_Q], "Vida (que usava o E) troca para o Q")
+	var event := InputEventKey.new()
+	event.physical_keycode = KEY_E
+	event.pressed = true
+	check(event.is_action("element_water") and not event.is_action("element_life"), "InputMap atualizado")
+
+	keybinds.set_binding("cast_forward", ["mouse", MOUSE_BUTTON_LEFT])
+	check(keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_RIGHT], "botões do mouse também trocam")
+	check(Keybinds.event_to_binding(event) == ["key", KEY_E], "evento de tecla vira binding")
+
+	keybinds.load_defaults()
+	check(keybinds.bindings.element_life == ["key", KEY_E], "restaurar padrão")
+	keybinds.free()
