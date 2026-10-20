@@ -1,0 +1,96 @@
+# Testes da lógica pura (fila, resolvedor e vida).
+# Rodar: godot --headless --path . --script res://tests/run_tests.gd
+extends SceneTree
+
+const E = preload("res://scripts/core/elements.gd")
+const ElementQueue = preload("res://scripts/core/element_queue.gd")
+const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
+const Health = preload("res://scripts/core/health.gd")
+
+var checks := 0
+var failures := 0
+
+
+func _init() -> void:
+	_test_queue()
+	_test_resolver()
+	_test_health()
+	print("%d verificações, %d falhas" % [checks, failures])
+	quit(1 if failures > 0 else 0)
+
+
+func check(condition: bool, message: String) -> void:
+	checks += 1
+	if not condition:
+		failures += 1
+		printerr("FALHOU: " + message)
+
+
+func queue_of(list: Array) -> Array:
+	var queue := ElementQueue.new()
+	for element in list:
+		queue.add(element)
+	return queue.elements
+
+
+func _test_queue() -> void:
+	var T = E.Type
+	check(queue_of([T.WATER, T.LIGHTNING]) == [], "Água + Raio se anulam")
+	check(queue_of([T.LIFE, T.ARCANE]) == [], "Vida + Arcano se anulam")
+	check(queue_of([T.SHIELD, T.SHIELD]) == [], "Escudo + Escudo se anulam")
+	check(queue_of([T.WATER, T.FIRE]) == [T.STEAM], "Água + Fogo = Vapor")
+	check(queue_of([T.COLD, T.WATER]) == [T.ICE], "Frio + Água = Gelo")
+	check(queue_of([T.WATER, T.FIRE, T.COLD]) == [], "Vapor + Frio se anulam")
+	check(queue_of([T.FIRE, T.FIRE, T.COLD]) == [T.FIRE], "Frio anula só um Fogo")
+	check(queue_of([T.LIFE, T.EARTH, T.ARCANE]) == [T.EARTH], "anulação remove o par certo")
+	check(queue_of([T.FIRE, T.FIRE, T.FIRE, T.FIRE, T.FIRE, T.FIRE]).size() == 5, "limite de 5")
+
+
+func _test_resolver() -> void:
+	var T = E.Type
+	var S = SpellResolver.Shape
+	var cases := [
+		[[], S.NONE],
+		[[T.SHIELD, T.FIRE], S.BARRIER],
+		[[T.EARTH, T.FIRE], S.PROJECTILE],
+		[[T.ICE], S.PROJECTILE],
+		[[T.ARCANE, T.FIRE], S.BEAM],
+		[[T.LIFE], S.BEAM],
+		[[T.LIGHTNING, T.FIRE], S.ARC],
+		[[T.FIRE, T.FIRE], S.SPRAY],
+		[[T.STEAM], S.SPRAY],
+	]
+	for test_case in cases:
+		var got := SpellResolver.resolve_shape(test_case[0])
+		check(got == test_case[1], "forma de %s: esperado %s, veio %s" % [test_case[0], test_case[1], got])
+
+
+func _test_health() -> void:
+	var T = E.Type
+	var health := Health.new()
+	health.max_hp = 100.0
+
+	health.reset()
+	health.apply_elements([T.LIGHTNING], 1.0)
+	check(is_equal_approx(health.hp, 70.0), "Raio seco tira 30")
+
+	health.reset()
+	health.apply_elements([T.WATER], 1.0)
+	health.apply_elements([T.LIGHTNING], 1.0)
+	check(is_equal_approx(health.hp, 100.0 - 4.0 - 60.0), "Raio em alvo molhado dobra")
+
+	health.reset()
+	health.apply_elements([T.WATER], 1.0)
+	health.apply_elements([T.FIRE], 1.0)
+	check(health.wet == 0.0 and health.burning == 0.0, "Fogo seca em vez de incendiar")
+
+	health.reset()
+	health.apply_elements([T.FIRE], 1.0)
+	check(health.burning > 0.0, "Fogo incendeia alvo seco")
+
+	health.reset()
+	health.apply_elements([T.EARTH], 1.0)
+	health.apply_elements([T.LIFE, T.LIFE], 1.0)
+	check(is_equal_approx(health.hp, 100.0), "Vida cura sem passar do máximo")
+
+	health.free()
