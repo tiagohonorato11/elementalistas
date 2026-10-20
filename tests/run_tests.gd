@@ -131,18 +131,18 @@ func _test_keybinds() -> void:
 
 	keybinds.set_binding("element_water", ["key", KEY_E])
 	check(keybinds.bindings.element_water == ["key", KEY_E], "Água passa para o E")
-	check(keybinds.bindings.element_life == ["key", KEY_Q], "Vida (que usava o E) troca para o Q")
+	check(keybinds.bindings.element_shield == ["key", KEY_Q], "Escudo (que usava o E) troca para o Q")
 	var event := InputEventKey.new()
 	event.physical_keycode = KEY_E
 	event.pressed = true
-	check(event.is_action("element_water") and not event.is_action("element_life"), "InputMap atualizado")
+	check(event.is_action("element_water") and not event.is_action("element_shield"), "InputMap atualizado")
 
-	keybinds.set_binding("cast_forward", ["mouse", MOUSE_BUTTON_LEFT])
-	check(keybinds.bindings.cast_weapon == ["mouse", MOUSE_BUTTON_RIGHT], "botões do mouse também trocam")
+	keybinds.set_binding("cast_weapon", ["mouse", MOUSE_BUTTON_RIGHT])
+	check(keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_LEFT], "botões do mouse também trocam")
 	check(Keybinds.event_to_binding(event) == ["key", KEY_E], "evento de tecla vira binding")
 
 	keybinds.load_defaults()
-	check(keybinds.bindings.element_life == ["key", KEY_E], "restaurar padrão")
+	check(keybinds.bindings.element_life == ["key", KEY_W] and keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_RIGHT], "restaurar padrão (QWER ASDF, andar no botão direito)")
 	keybinds.free()
 
 

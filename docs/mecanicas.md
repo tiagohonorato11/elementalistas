@@ -22,13 +22,13 @@ As teclas abaixo são o padrão; cada jogador pode trocá-las em **Configuraçõ
 | Tecla | Elemento | Dano base* | Efeito |
 |---|---|---|---|
 | Q | Água | 4 | molha, apaga fogo |
-| E | Vida | −30 (cura) | — |
-| R | Escudo | 0 | barreira / proteção |
-| F | Frio | 10 | resfria (lentidão), apaga fogo |
-| Z | Raio | 30 | dano dobrado em alvo molhado |
-| X | Arcano | 35 | — |
-| C | Terra | 40 | — |
-| V | Fogo | 15 | incendeia (8/s por 4s) ou seca alvo molhado |
+| W | Vida | −30 (cura) | — |
+| E | Escudo | 0 | barreira / proteção |
+| R | Frio | 10 | resfria (lentidão), apaga fogo |
+| A | Raio | 30 | dano dobrado em alvo molhado |
+| S | Arcano | 35 | — |
+| D | Terra | 40 | — |
+| F | Fogo | 15 | incendeia (8/s por 4s) ou seca alvo molhado |
 | — | Vapor (Água+Fogo) | 20 | molha |
 | — | Gelo (Água+Frio) | 25 | resfria |
 
@@ -54,17 +54,21 @@ Ao adicionar um elemento, nesta ordem:
 4. Tem Raio → **Arco elétrico** (salta para até 3 alvos)
 5. Resto (Água, Fogo, Frio, Vapor) → **Spray** em cone
 
-## Modos de lançar
-- **À frente** (botão direito):
-  - **Projétil** (Terra/Gelo) **carrega** enquanto o botão está segurado: de 0,6× a 2× de dano em 1,2 s, mais rápido, maior e com mais empurrão. Solta sozinho após 3 s.
-  - **Spray, beam e arco** ficam ativos enquanto o botão estiver segurado, até 3 s.
-  - **Barreira** sai na hora (veja abaixo).
-- **Área** (Shift + botão direito): aplica os elementos a todos num raio de 4 m; com Água, empurra. Com Escudo, cria um anel de barreiras.
-- **Em si mesmo** (Espaço ou botão do meio): aplica os elementos no próprio mago (Vida cura, Fogo queima!).
-  - **Escudo sozinho**: metade do dano por 5 s.
+## Controles (padrão)
+- **Andar:** clique com o **botão direito** no chão e o personagem vai até lá pelo caminho mais curto, contornando obstáculos. Segurando o botão, ele segue o cursor. Clicar dentro de um obstáculo leva até o ponto alcançável mais próximo. As setas também andam e cancelam o destino.
+- **Mira:** sempre no ponteiro do mouse.
+- **Lançar à frente (automático):** monte a combinação (Q W E R / A S D F) e **espere 1 s** sem apertar outro elemento ou habilidade. A fila é lançada na direção do mouse; cada elemento ou habilidade nova reinicia a espera, e o HUD mostra a contagem.
+  - **Projétil** (Terra/Gelo): sai com força total (2× de dano, mais rápido e com mais empurrão).
+  - **Spray, beam e arco:** duram 2 s. Apertar um elemento no meio interrompe e começa outra combinação.
+  - **Barreira:** sai na hora em que a espera termina.
+
+## Modos de lançar (na hora)
+- **Área** (**Shift**): aplica a fila a todos num raio de 4 m; com Água, empurra. Com Escudo, cria um anel de barreiras.
+- **Em si mesmo** (**Espaço** ou botão do meio): aplica a fila no próprio personagem (Vida cura, Fogo queima!).
+  - **Escudo sozinho:** metade do dano por 5 s.
   - **Escudo + elementos** (**proteção elemental**): imune a esses elementos por 10 s, por exemplo Escudo + Fogo antes de usar a parede de fogo.
-- **Golpe com a arma** (botão esquerdo): 20 de dano em cone curto à frente, com empurrão e recarga de 0,6 s. Se houver elementos na fila, o golpe os carrega (×0,8) e consome a fila.
-- **Andar**: WASD ou setas (para cima = para o fundo da tela). "Andar até o cursor" fica no botão lateral do mouse (configurável).
+- **Golpe com a arma** (**botão esquerdo**): dano em cone à frente com empurrão; os números dependem da classe. Elementos na fila vão para a arma e são consumidos.
+- **Feitiço especial** (**G**) e **habilidade da classe** (**Ctrl**).
 
 ## Barreiras
 | Fila | Resultado |
@@ -87,11 +91,11 @@ Monte os elementos na fila (a ordem não importa) e aperte **G**. Cada um tem re
 
 | Especial | Receita (teclas padrão) | Efeito | Recarga |
 |---|---|---|---|
-| Meteoro | Fogo, Terra, Fogo, Terra (V C V C) | cai no cursor (até 14 m) após 1 s: Fogo×2 + Terra×2 num raio de 4,5 m e empurrão; atinge aliados | 20 s |
-| Tempestade | Frio, Raio, Frio, Raio (F Z F Z) | por 5 s, um raio duplo a cada 0,5 s num inimigo próximo | 25 s |
-| Inverno | Frio, Escudo, Frio (F R F) | congela por 3,5 s os inimigos num raio de 10 m | 30 s |
-| Teleporte | Arcano, Raio, Arcano (X Z X) | salta até o cursor (até 10 m); falha se o destino estiver bloqueado | 8 s |
-| Bênção | Vida, Escudo, Vida (E R E) | revive todos os magos caídos e cura 60 | 40 s |
+| Meteoro | Fogo, Terra, Fogo, Terra (F D F D) | cai no cursor (até 14 m) após 1 s: Fogo×2 + Terra×2 num raio de 4,5 m e empurrão; atinge aliados | 20 s |
+| Tempestade | Frio, Raio, Frio, Raio (R A R A) | por 5 s, um raio duplo a cada 0,5 s num inimigo próximo | 25 s |
+| Inverno | Frio, Escudo, Frio (R E R) | congela por 3,5 s os inimigos num raio de 10 m | 30 s |
+| Teleporte | Arcano, Raio, Arcano (S A S) | salta até o cursor (até 10 m); falha se o destino estiver bloqueado | 8 s |
+| Bênção | Vida, Escudo, Vida (W E W) | revive todos os magos caídos e cura 60 | 40 s |
 
 ## Inimigos (`scripts/gameplay/enemy.gd`)
 | Tipo | Vida | Ataque | Particularidade |
@@ -115,16 +119,17 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - [ ] Mais arenas e um chefe
 
 ## Checklist de teste manual
-- [ ] Q + V mostra "Vapor" no HUD; Q + Z esvazia a fila
-- [ ] C + botão direito segurado ~1 s: projétil carregado acerta um inimigo (até −80) e o empurra
-- [ ] V + botão direito segurado: spray em cone; o inimigo fica "queimando"
-- [ ] Q no inimigo e depois Z: dano dobrado
-- [ ] R + botão direito: barreira à frente que some em 6 s
-- [ ] E + Espaço: cura o próprio mago
+- [ ] Botão direito no chão: o personagem anda até lá contornando os pilares; segurando, segue o cursor
+- [ ] Q + F mostra "Vapor" no HUD; Q + A esvazia a fila
+- [ ] D e esperar 1 s: projétil com força total acerta um inimigo (até −80) e o empurra
+- [ ] F e esperar: spray em cone por 2 s; o inimigo fica "queimando"
+- [ ] Q no inimigo e depois A: dano dobrado
+- [ ] E e esperar: barreira à frente que some em 6 s
+- [ ] W + Espaço: cura o próprio personagem
 - [ ] Salamandra não sofre dano de Fogo; Água ou Frio a derrubam mais rápido
-- [ ] Um amigo cai; E + botão direito (beam de Vida) nele o levanta com metade da vida
+- [ ] Um amigo cai; W e esperar com a mira nele (beam de Vida) o levanta com metade da vida
 - [ ] Todos caídos: aparece "DERROTA"; o host aperta R e a partida recomeça
-- [ ] R + V + botão direito: parede de fogo; inimigos que encostam queimam
-- [ ] Q (spray) e depois F (spray) no mesmo inimigo: ele congela; C no congelado: estilhaça
-- [ ] V + botão esquerdo: golpe com fogo
-- [ ] V C V C + G: meteoro no cursor; X Z X + G: teleporte
+- [ ] E + F e esperar: parede de fogo; inimigos que encostam queimam
+- [ ] Q (spray) e depois R (spray) no mesmo inimigo: ele congela; D no congelado: estilhaça
+- [ ] F + botão esquerdo: golpe com fogo
+- [ ] F D F D + G: meteoro no cursor; S A S + G: teleporte

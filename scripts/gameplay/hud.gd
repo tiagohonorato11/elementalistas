@@ -77,6 +77,8 @@ func _update_status() -> void:
 		spell_text += "  (ou especial: %s)" % Specials.SPECIALS[special].label
 	if player.fx_shape == SpellResolver.Shape.PROJECTILE:
 		spell_text = "Carregando projétil: %d%%" % roundi(player.fx_length * 100.0)
+	elif player.auto_cast_timer > 0.0:
+		spell_text += "  — lança em %.1f s" % player.auto_cast_timer
 	var ability: String = player.cls.ability_label
 	var ability_state := "pronta" if player.ability_cooldown <= 0.0 else "%ds" % ceili(player.ability_cooldown)
 	var class_text := "%s | %s (%s): %s" % [
@@ -146,12 +148,10 @@ func _help_text() -> String:
 	var k := func(id): return Keybinds.action_text(id)
 	var lines := PackedStringArray([
 		"Elementos: " + " | ".join(elements),
-		"Andar: %s%s%s%s ou setas | Lançar: %s (segure: carrega projétil / mantém spray, beam e arco) | Golpe: %s" % [
-			k.call("move_up"), k.call("move_left"), k.call("move_down"), k.call("move_right"),
-			k.call("cast_forward"), k.call("cast_weapon")],
-		"Área: %s + %s | Em si mesmo: %s ou botão do meio | Especial: %s | Habilidade: %s | Esc: sair para o lobby" % [
-			k.call("area_modifier"), k.call("cast_forward"), k.call("cast_self"), k.call("cast_special"),
-			k.call("class_ability")],
+		"Andar: %s no chão | Lançar: monte a combinação e espere 1 s (mira no mouse) | Golpe: %s" % [
+			k.call("move_to_cursor"), k.call("cast_weapon")],
+		"Área: %s | Em si mesmo: %s | Especial: %s | Habilidade: %s | Esc: sair para o lobby" % [
+			k.call("cast_area"), k.call("cast_self"), k.call("cast_special"), k.call("class_ability")],
 	])
 	return "\n".join(lines)
 

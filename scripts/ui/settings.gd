@@ -67,7 +67,7 @@ func _refresh() -> void:
 	for id in buttons:
 		buttons[id].text = "Aperte uma tecla..." if id == listening_id else Keybinds.action_text(id)
 	if listening_id.is_empty():
-		hint_label.text = "Clique numa ação para trocar a tecla. Fixos: setas para andar, botão do meio para lançar em si mesmo, Esc para sair."
+		hint_label.text = "Clique numa ação para trocar a tecla. Fixos: botão do meio para lançar em si mesmo, Esc para sair."
 	else:
 		hint_label.text = "Aperte a nova tecla ou botão do mouse (Esc cancela). Se ela já estiver em uso, as duas ações trocam."
 

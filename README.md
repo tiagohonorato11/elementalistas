@@ -10,7 +10,7 @@ Pelo editor:
 2. Abra o Godot → **Import** → selecione o arquivo `project.godot` desta pasta.
 3. Aperte **F5** para jogar.
 
-Os controles aparecem no canto da tela e podem ser trocados em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
+Controles padrão: **botão direito** no chão para andar, mira no mouse, elementos em **Q W E R / A S D F** e espere **1 s** para lançar. Eles aparecem no canto da tela e podem ser trocados em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
 ## Jogar com amigos no mesmo Wi-Fi
 1. Todos precisam do jogo no PC: mande o `Elementistas.exe` da raiz (todos com a mesma versão).
@@ -41,6 +41,11 @@ godot --headless --path . res://tests/spells_smoke.tscn
 Teste das classes (Assassino, Lutador e Mago: atributos, arma, costas, habilidades):
 ```
 godot --headless --path . res://tests/classes_smoke.tscn
+```
+
+Teste dos controles (disparo automático, andar clicando, setas):
+```
+godot --headless --path . res://tests/controls_smoke.tscn
 ```
 
 Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):

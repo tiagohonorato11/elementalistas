@@ -1,0 +1,155 @@
+# Teste dos controles em partida solo (sem janela):
+#   godot --headless --path . res://tests/controls_smoke.tscn
+# Simula teclas e cliques de verdade (Input.parse_input_event): disparo automático
+# depois de 1 s, andar clicando (contornando um pilar) e setas.
+extends Node
+
+const E = preload("res://scripts/core/elements.gd")
+const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
+
+
+class Driver extends Node:
+	var main: Node
+	var player: Node
+	var failures := 0
+
+	func _ready() -> void:
+		Network.my_class = "mage"
+		Network.host()
+		Network.start_game()
+		await _wait_until(func(): return _scene_ready())
+		main.game_state.timer = 9999.0   # sem ondas durante o teste
+		await _seconds(0.3)
+		await _run()
+		print("controles: %s" % ("OK" if failures == 0 else "%d falha(s)" % failures))
+		get_tree().quit(1 if failures > 0 else 0)
+
+	func _scene_ready() -> bool:
+		main = get_tree().current_scene
+		if main == null or main.get("local_player") == null or main.get("game_state") == null:
+			return false
+		player = main.local_player
+		player.camera = null   # a mira (aim_point) é definida pelo teste
+		return true
+
+	func _run() -> void:
+		var dummy := await _spawn_dummy(Vector3(0, 0, -4))
+		player.aim_point = dummy.global_position   # o mouse está sobre o alvo
+
+		# 1) Disparo automático do projétil: nada antes de 1 s, força total depois.
+		_key(KEY_D)   # Terra
+		await _seconds(0.5)
+		_check(is_equal_approx(dummy.health.hp, 500.0) and player.auto_cast_timer > 0.0, "nada sai antes de 1 s")
+		await _seconds(1.0)
+		_check(is_equal_approx(500.0 - dummy.health.hp, 80.0), "Terra sai sozinha com força total (dano %d)" % (500 - dummy.health.hp))
+		_check(player.queue_view.is_empty(), "fila esvazia depois do disparo")
+
+		# 2) Cada elemento novo reinicia a espera; spray dura 2 s.
+		_reset(dummy, Vector3(0, 0, -3))
+		player.aim_point = dummy.global_position
+		_key(KEY_F)
+		await _seconds(0.7)
+		_key(KEY_F)
+		await _seconds(0.7)
+		_check(player.queue_view.size() == 2 and player.fx_shape == SpellResolver.Shape.NONE, "segundo elemento reinicia a espera")
+		await _seconds(0.5)
+		_check(player.fx_shape == SpellResolver.Shape.SPRAY, "spray de Fogo começa sozinho")
+		await _seconds(2.2)
+		_check(player.fx_shape == SpellResolver.Shape.NONE and dummy.health.burning > 0.0, "spray dura 2 s e queima")
+
+		# 3) Um elemento durante o spray interrompe e começa outra combinação.
+		_key(KEY_F)
+		await _seconds(1.3)
+		_check(player.fx_shape == SpellResolver.Shape.SPRAY, "spray ativo")
+		_key(KEY_Q)
+		await _seconds(0.1)
+		_check(player.fx_shape == SpellResolver.Shape.NONE and player.queue_view == [E.Type.WATER], "Água interrompe o spray e vira a nova fila")
+		await _seconds(3.5)   # deixa o spray de Água terminar
+
+		# 4) Lançar na hora: Shift = área, Espaço = em si mesmo.
+		_reset(dummy, Vector3(0, 0, -3))
+		_key(KEY_F)
+		_key(KEY_SHIFT)
+		await _seconds(0.1)
+		_check(dummy.health.hp < 500.0 and player.queue_view.is_empty(), "Shift lança em área na hora")
+		_key(KEY_W)
+		player.health.damage(50.0)
+		_key(KEY_SPACE)
+		await _seconds(0.1)
+		_check(player.health.hp > 150.0 - 1.0 + 20.0, "Espaço lança Vida em si mesmo (hp=%d)" % player.health.hp)
+
+		# 5) Andar clicando com o botão direito, contornando o pilar em (7, -7).
+		dummy.queue_free()
+		player.global_position = Vector3(7, 0, -3)
+		await _seconds(0.2)
+		player.aim_point = Vector3(7, 0, -11)   # atrás do pilar
+		_click(MOUSE_BUTTON_RIGHT)
+		await _seconds(4.0)
+		_check(player.global_position.distance_to(Vector3(7, 0, -11)) < 0.6,
+			"clique leva o personagem até o destino, contornando o pilar (%s)" % player.global_position.snapped(Vector3.ONE * 0.1))
+
+		# 6) Clique dentro de um obstáculo: chega o mais perto possível e para.
+		player.aim_point = Vector3(7, 0, -7)   # centro do pilar
+		_click(MOUSE_BUTTON_RIGHT)
+		await _seconds(3.0)
+		_check(not player.has_move_target, "destino inalcançável: desiste em vez de ficar empurrando")
+
+		# 7) Setas andam e cancelam o destino do clique.
+		player.global_position = Vector3.ZERO
+		player.aim_point = Vector3(0, 0, 10)
+		_click(MOUSE_BUTTON_RIGHT)
+		await _seconds(0.1)
+		_press(KEY_LEFT, true)
+		await _seconds(0.5)
+		_press(KEY_LEFT, false)
+		_check(not player.has_move_target and player.global_position.x < -1.5, "seta cancela o clique e anda (%s)" % player.global_position.snapped(Vector3.ONE * 0.1))
+
+	# --- Ajudantes ---
+
+	func _spawn_dummy(at: Vector3) -> Node:
+		main.spawn_entity({"type": "enemy", "kind": "grunt", "pos": at})
+		await _seconds(0.2)
+		var dummy: Node = get_tree().get_nodes_in_group("enemies")[0]
+		dummy.health.max_hp = 500.0
+		_reset(dummy, at)
+		return dummy
+
+	# Alvo parado: sem física não anda, não vira e não ataca.
+	func _reset(dummy: Node, at: Vector3) -> void:
+		dummy.set_physics_process(false)
+		dummy.health.reset()
+		dummy.global_position = at
+
+	func _press(code: int, down: bool) -> void:
+		var event := InputEventKey.new()
+		event.physical_keycode = code
+		event.pressed = down
+		Input.parse_input_event(event)
+
+	func _key(code: int) -> void:
+		_press(code, true)
+		_press(code, false)
+
+	func _click(button: int) -> void:
+		for down in [true, false]:
+			var event := InputEventMouseButton.new()
+			event.button_index = button
+			event.pressed = down
+			Input.parse_input_event(event)
+			await get_tree().physics_frame
+
+	func _check(condition: bool, message: String) -> void:
+		print(("ok    " if condition else "FALHOU ") + message)
+		if not condition:
+			failures += 1
+
+	func _seconds(time: float) -> void:
+		await get_tree().create_timer(time).timeout
+
+	func _wait_until(condition: Callable) -> void:
+		while not condition.call():
+			await get_tree().process_frame
+
+
+func _ready() -> void:
+	get_tree().root.add_child.call_deferred(Driver.new())

@@ -95,6 +95,8 @@ func _ready() -> void:
 		health.died.connect(queue_free)
 		agent = NavigationAgent3D.new()
 		agent.radius = capsule.radius
+		# O navmesh fica 0,5 m acima da origem do inimigo (que está no chão).
+		agent.path_height_offset = 0.5
 		agent.path_desired_distance = 0.5
 		agent.target_desired_distance = 0.5
 		add_child(agent)

@@ -16,6 +16,13 @@ enum CastMode { FORWARD, AREA, SELF }
 
 const GRAVITY := 20.0
 const CHANNEL_MAX := 3.0
+# Disparo automático: depois de 1 s sem novo elemento/habilidade, a fila é lançada
+# à frente (na direção do mouse). Spray, beam e arco duram AUTO_CHANNEL_TIME.
+const AUTO_CAST_DELAY := 1.0
+const AUTO_CHANNEL_TIME := 2.0
+# Andar clicando.
+const ARRIVE_DISTANCE := 0.3
+const STUCK_TIME := 0.4
 const SPRAY_RANGE := 5.0
 const SPRAY_ANGLE := 0.5236  # 30 graus
 const BEAM_RANGE := 20.0
@@ -68,10 +75,6 @@ const ELEMENT_ACTIONS := {
 	"element_earth": E.Type.EARTH,
 	"element_fire": E.Type.FIRE,
 }
-# As setas sempre andam, além das teclas configuradas.
-const ARROW_KEYS := {
-	KEY_UP: Vector2.UP, KEY_DOWN: Vector2.DOWN, KEY_LEFT: Vector2.LEFT, KEY_RIGHT: Vector2.RIGHT,
-}
 
 var peer_id := 1
 var class_id := Classes.DEFAULT
@@ -92,12 +95,14 @@ var ability_cooldown := 0.0
 var weapon_elements: Array = []   # elementos na arma (o Assassino guarda por 3 golpes)
 var weapon_charges := 0
 var invisible := 0.0              # Passo sombrio: os inimigos ignoram
+var auto_cast_timer := 0.0        # contagem até o disparo automático
 
 # Só usados no host.
 var queue := ElementQueue.new()
 var channel_elements: Array = []
 var channel_shape: int = SpellResolver.Shape.NONE
 var channel_time := 0.0
+var channel_limit := CHANNEL_MAX
 var weapon_timer := 0.0
 var storm_time := 0.0
 var storm_tick := 0.0
@@ -110,6 +115,12 @@ var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido de lanç
 # Investida: o dono move o personagem (só no PC dele).
 var dash_velocity := Vector3.ZERO
 var dash_time := 0.0
+
+# Andar clicando (só no PC do dono).
+var nav_agent: NavigationAgent3D
+var move_target := Vector3.ZERO
+var has_move_target := false
+var _stuck_time := 0.0
 
 var body: MeshInstance3D
 var body_parts: Array = []    # corpo + acessórios (ficam transparentes juntos)
@@ -141,11 +152,20 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width", ".:special_cooldowns",
-		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible",
+		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible", ".:auto_cast_timer",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements",
 	])
 	set_multiplayer_authority(peer_id, false)
+
+	if is_local():
+		nav_agent = NavigationAgent3D.new()
+		nav_agent.radius = 0.5
+		# O navmesh fica 0,5 m acima da origem do personagem (que está no chão).
+		nav_agent.path_height_offset = 0.5
+		nav_agent.path_desired_distance = 0.4
+		nav_agent.target_desired_distance = ARRIVE_DISTANCE
+		add_child(nav_agent)
 
 
 # Gray-box: a cor identifica o jogador; o formato e os acessórios, a classe.
@@ -218,11 +238,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_action_pressed(action):
 			request_element.rpc_id(1, ELEMENT_ACTIONS[action])
 			return
-	if event.is_action_pressed("cast_forward"):
-		var mode := CastMode.AREA if Input.is_action_pressed("area_modifier") else CastMode.FORWARD
-		request_cast.rpc_id(1, mode, true, _forward())
-	elif event.is_action_released("cast_forward"):
-		request_cast.rpc_id(1, CastMode.FORWARD, false, _forward())
+	if event.is_action_pressed("move_to_cursor"):
+		_show_move_marker(aim_point)
+	elif event.is_action_pressed("cast_area"):
+		request_cast.rpc_id(1, CastMode.AREA, true, _forward())
 	elif event.is_action_pressed("cast_self") or _is_middle_click(event):
 		request_cast.rpc_id(1, CastMode.SELF, true, _forward())
 	elif event.is_action_pressed("cast_weapon"):
@@ -268,19 +287,17 @@ func _move_local(delta: float) -> void:
 		push_velocity = Vector3.ZERO
 		return
 
-	# Andar: teclas configuradas/setas (para cima = para o fundo da tela) ou até o cursor.
-	var direction := Vector3.ZERO
+	# Andar: clicar (ou segurar) no chão leva o personagem até lá pelo navmesh;
+	# as teclas de direção (setas) andam direto e cancelam o destino.
 	if Input.is_action_pressed("move_to_cursor"):
-		direction = aim_point - global_position
-		direction.y = 0.0
-		if direction.length() < 0.3:
-			direction = Vector3.ZERO
+		set_move_target(aim_point)
+	var direction := Vector3.ZERO
 	var keys := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	for key in ARROW_KEYS:
-		if Input.is_physical_key_pressed(key):
-			keys += ARROW_KEYS[key]
 	if keys != Vector2.ZERO:
+		has_move_target = false
 		direction = Vector3(keys.x, 0.0, keys.y)
+	elif has_move_target:
+		direction = _path_direction()
 
 	if dash_time > 0.0:
 		dash_time -= delta
@@ -301,10 +318,67 @@ func _move_local(delta: float) -> void:
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	push_velocity = push_velocity.move_toward(Vector3.ZERO, PUSH_DECAY * delta)
 	move_and_slide()
+	_check_stuck(delta, direction, speed)
 
 	var flat_aim := Vector3(aim_point.x, global_position.y, aim_point.z)
 	if health.frozen <= 0.0 and flat_aim.distance_to(global_position) > 0.1:
 		look_at(flat_aim, Vector3.UP)
+
+
+func set_move_target(point: Vector3) -> void:
+	point.y = 0.0
+	if has_move_target and point.distance_to(move_target) < 0.2:
+		return
+	move_target = point
+	has_move_target = true
+	_stuck_time = 0.0
+	nav_agent.target_position = point
+
+
+# Próximo trecho do caminho. Destino dentro de um obstáculo: para no ponto
+# alcançável mais próximo. Navmesh ainda carregando: linha reta.
+func _path_direction() -> Vector3:
+	var to_target := move_target - global_position
+	to_target.y = 0.0
+	if to_target.length() <= ARRIVE_DISTANCE:
+		has_move_target = false
+		return Vector3.ZERO
+	if NavigationServer3D.map_get_iteration_id(nav_agent.get_navigation_map()) == 0:
+		return to_target.normalized()
+	var next := nav_agent.get_next_path_position()
+	if nav_agent.is_navigation_finished():
+		has_move_target = false
+		return Vector3.ZERO
+	var direction := next - global_position
+	direction.y = 0.0
+	if direction.length() < 0.05:
+		direction = to_target
+	return direction.normalized()
+
+
+# Destino dentro de um obstáculo ou atrás de outro personagem: desiste em vez de empurrar parado.
+func _check_stuck(delta: float, direction: Vector3, speed: float) -> void:
+	if not has_move_target or direction == Vector3.ZERO or speed <= 0.0:
+		_stuck_time = 0.0
+		return
+	if get_real_velocity().length() < speed * 0.2:
+		_stuck_time += delta
+		if _stuck_time >= STUCK_TIME:
+			has_move_target = false
+	else:
+		_stuck_time = 0.0
+
+
+func _show_move_marker(at: Vector3) -> void:
+	var marker := MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.25
+	ring.outer_radius = 0.35
+	marker.mesh = ring
+	marker.material_override = E.make_material(Color(0.4, 1.0, 0.5, 0.8))
+	get_parent().add_child(marker)
+	marker.global_position = Vector3(at.x, 0.05, at.z)
+	get_tree().create_timer(0.35).timeout.connect(marker.queue_free)
 
 
 func _update_aim() -> void:
@@ -343,10 +417,14 @@ func _add_push(impulse: Vector3) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func request_element(element: int) -> void:
-	if not _from_owner() or _is_channeling():
+	if not _from_owner():
 		return
+	# Um elemento novo interrompe spray/beam/arco e começa outra combinação.
+	if _is_channeling():
+		_cancel_channel()
 	queue.add(element)
 	_publish_queue()
+	auto_cast_timer = AUTO_CAST_DELAY if not queue.is_empty() else 0.0
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -394,6 +472,9 @@ func request_ability(aim: Vector3) -> void:
 		_ability_charge()
 	if used:
 		ability_cooldown = cls.ability_cooldown
+		# Usar uma habilidade também reinicia a espera do disparo automático.
+		if not queue.is_empty():
+			auto_cast_timer = AUTO_CAST_DELAY
 	_cast_dir = Vector3.ZERO
 
 
@@ -461,6 +542,7 @@ func _cast_forward() -> void:
 	channel_elements = elements
 	channel_shape = shape
 	channel_time = 0.0
+	channel_limit = CHANNEL_MAX
 	fx_shape = shape
 	fx_element = elements[0]
 	fx_length = 0.0
@@ -507,6 +589,32 @@ func _cast_self() -> void:
 func _clear_queue() -> void:
 	queue.clear()
 	_publish_queue()
+	auto_cast_timer = 0.0
+
+
+# Disparo automático (host): a fila vai à frente, na direção em que o
+# personagem está virado (que segue o mouse do dono).
+func _update_auto_cast(delta: float) -> void:
+	if auto_cast_timer <= 0.0:
+		return
+	auto_cast_timer -= delta
+	if auto_cast_timer > 0.0:
+		return
+	auto_cast_timer = 0.0
+	if queue.is_empty() or _is_channeling() or health.dead:
+		return
+	if health.frozen > 0.0:
+		auto_cast_timer = 0.1   # tenta de novo quando descongelar
+		return
+	var elements := queue.elements.duplicate()
+	if SpellResolver.resolve_shape(elements) == SpellResolver.Shape.PROJECTILE:
+		# A espera conta como carga: o projétil sai com força total.
+		invisible = 0.0
+		_fire_projectile(elements, 1.0)
+		_clear_queue()
+		return
+	_cast_forward()
+	channel_limit = AUTO_CHANNEL_TIME
 
 
 # Golpe em cone à frente, com os números da arma da classe. Elementos na fila
@@ -623,6 +731,7 @@ func _update_host(delta: float) -> void:
 	ability_cooldown = maxf(ability_cooldown - delta, 0.0)
 	invisible = maxf(invisible - delta, 0.0)
 	_update_dash_hits(delta)
+	_update_auto_cast(delta)
 	_update_cooldowns(delta)
 	_update_storm(delta)
 	if _is_channeling():
@@ -645,7 +754,7 @@ func _update_cooldowns(delta: float) -> void:
 
 func _update_channel(delta: float) -> void:
 	channel_time += delta
-	if channel_time >= CHANNEL_MAX:
+	if channel_time >= channel_limit:
 		_stop_channel()
 		return
 

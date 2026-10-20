@@ -58,6 +58,8 @@ class Driver extends Node:
 				# Investida do Lutador: o host pede, o PC do cliente move.
 				print("[client] investida a partir de %s" % main.local_player.global_position.snapped(Vector3.ONE * 0.1))
 				main.local_player.request_ability.rpc_id(1, Vector3(-1, 0, 0))
+				# Andar clicando no PC do cliente (navmesh local), depois da Investida.
+				main.local_player.set_move_target(Vector3(-6, 0, 6))
 				step = 5
 			elif step == 5 and time > 13.0:
 				_report(main)

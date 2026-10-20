@@ -153,16 +153,16 @@ func _build_arena() -> void:
 	for obstacle in OBSTACLES:
 		_add_block(region, obstacle[0], obstacle[1], Color(0.5, 0.47, 0.42))
 
-	# Só o host precisa do navmesh (só ele move os inimigos).
-	if multiplayer.is_server():
-		var nav_mesh := NavigationMesh.new()
-		nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
-		nav_mesh.cell_size = 0.25
-		nav_mesh.cell_height = 0.25
-		nav_mesh.agent_radius = 0.75
-		nav_mesh.agent_height = 2.0
-		region.navigation_mesh = nav_mesh
-		region.bake_navigation_mesh(false)
+	# Navmesh em todos os PCs: o host move os inimigos e cada jogador calcula
+	# o caminho do próprio personagem (andar clicando).
+	var nav_mesh := NavigationMesh.new()
+	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nav_mesh.cell_size = 0.25
+	nav_mesh.cell_height = 0.25
+	nav_mesh.agent_radius = 0.75
+	nav_mesh.agent_height = 2.0
+	region.navigation_mesh = nav_mesh
+	region.bake_navigation_mesh(false)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, 30, 0)
