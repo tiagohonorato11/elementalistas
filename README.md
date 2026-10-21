@@ -10,7 +10,7 @@ Pelo editor:
 2. Abra o Godot → **Import** → selecione o arquivo `project.godot` desta pasta.
 3. Aperte **F5** para jogar.
 
-Antes da partida, no lobby, cada um escolhe a **classe** e **3 elementos**. Controles padrão: **botão direito** no chão para andar, mira no mouse, **D F G** carregam os elementos (até 3) e **Q W E R** usam as skills da classe, que consomem a carga (o **R**, ultimate, muda conforme o elemento que mais aparece na carga). As skills gastam mana e têm recarga. As teclas aparecem na tela e podem ser trocadas em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
+Antes da partida, no lobby, cada um escolhe a **classe** e **3 elementos**. Controles padrão: **botão direito** no chão para andar, mira no mouse, **D F G** carregam os elementos (até 3) e **Q W E R** usam as skills da classe, que consomem a carga (o **R**, ultimate, é volátil: muda conforme a combinação da carga, e 3 iguais geram a versão MEGA). As skills gastam mana e têm recarga. As teclas aparecem na tela e podem ser trocadas em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
 ## Jogar com amigos no mesmo Wi-Fi
 1. Todos precisam do jogo no PC: mande o `Elementistas.exe` da raiz (todos com a mesma versão).
@@ -35,7 +35,7 @@ godot --headless --path . res://tests/net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/net_smoke.tscn -- --role=client
 ```
 
-Teste das skills (Q W E R das 3 classes, mana, recarga e os 11 ultimates):
+Teste das skills (Q W E R das 3 classes, mana, recarga, ultimates e versões MEGA):
 ```
 godot --headless --path . res://tests/skills_smoke.tscn
 ```
@@ -91,7 +91,8 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - 🟡 Fase 3: co-op em LAN funcionando (lobby, descoberta, até 4 jogadores, host decide o dano).
 - ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
 - ✅ Classes: Mago, Assassino e Lutador, escolhidas no lobby.
-- ✅ Skills estilo MOBA: 3 elementos (entre 11, incluindo Vazio, Gravidade e Fumaça) escolhidos antes da partida (D F G), 4 skills por classe (Q W E R) com mana e recarga, 11 ultimates conforme a carga.
+- ✅ Skills estilo MOBA: 3 elementos (entre 12, incluindo Vazio, Gravidade, Fumaça e Sangue) escolhidos antes da partida (D F G), 4 skills por classe (Q W E R) com mana e recarga, 12 ultimates + 12 versões MEGA conforme a carga.
+- ✅ Mago volátil: Orbe que cresce e explode em área, W segurado vira bolha de escudo, Mini meteoro que deixa zonas elementais.
 - ✅ Modo MOBA 3v3: torres, inibidores, nexus, tropas, selva, Guardião, ouro, níveis, loja, reaparecer e bots.
 - ✅ Fase 5 (visual e som): partículas por elemento, céu e iluminação, personagens e esqueletos animados (KayKit), torres/castelo, árvores e montanhas, barras de vida, ícones dos elementos, minimapa, efeitos sonoros 3D, ambiente e música que muda em combate e perto do Guardião.
 - ⬜ Fase 6: polimento.

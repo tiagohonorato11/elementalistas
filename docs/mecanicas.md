@@ -3,8 +3,8 @@
 Documento de design escrito com nossas próprias palavras. A referência de gênero são jogos co-op de magos elementais (como Magicka 2), estudados **apenas por observação**. Nenhum código, asset, texto ou nome do jogo original é usado aqui. Todos os números são nossos e ficam em `scripts/core/` (`elements.gd`, `classes.gd`, `ultimates.gd`).
 
 ## Antes da partida: classe e 3 elementos (lobby)
-Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 11 (fica salvo no PC, por classe). O 1º fica na tecla **D**, o 2º no **F** e o 3º no **G**.
-- **Opostos não podem ser escolhidos juntos** (eles se anulariam): Fogo×Frio, Água×Raio, Vida×Arcano, Terra×Raio, Vazio×Escudo e Fumaça×Água. No lobby, os opostos ficam bloqueados. A Gravidade não tem oposto.
+Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 12 (fica salvo no PC, por classe). O 1º fica na tecla **D**, o 2º no **F** e o 3º no **G**.
+- **Opostos não podem ser escolhidos juntos** (eles se anulariam): Fogo×Frio, Água×Raio, Vida×Arcano, Terra×Raio, Vazio×Escudo e Fumaça×Água. No lobby, os opostos ficam bloqueados. A Gravidade e o Sangue não têm oposto.
 - Padrões: Mago = Fogo, Raio, Arcano; Assassino = Arcano, Frio, Terra; Lutador = Fogo, Terra, Escudo.
 - Os bots sorteiam uma escolha válida.
 
@@ -16,6 +16,8 @@ Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 11 (fica
 - Toda skill gasta **mana** e tem **recarga**. A mana se regenera sozinha (6× mais rápido na fonte do MOBA).
 - **Golpe básico** (botão esquerdo): não usa a carga; dano em cone à frente com empurrão.
 - O **W** depende do que está **sob o mouse** (até 10 m): inimigo → enfraquece; aliado, ninguém ou você mesmo → fortalece. **Aliado caído:** o W o levanta (Arena).
+  - Em quem recebe o W de apoio, a carga vale assim: **Vida** cura +30, **Escudo** dá uma **barreira** de 40 (absorve dano por 5 s), **Sangue** dá **roubo de vida** (20% por 6 s); os outros elementos viram proteção elemental.
+- **Roubo de vida:** qualquer skill de dano com **Sangue** na carga cura quem lançou em 25% do dano causado (por Sangue). O bônus de roubo de vida vale também para o golpe básico.
 
 ## Classes (`scripts/core/classes.gd`)
 | | Mago | Assassino | Lutador |
@@ -29,16 +31,49 @@ Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 11 (fica
 **Mago**
 | Tecla | Skill | Efeito | Mana / recarga |
 |---|---|---|---|
-| Q | **Orbe** | projétil (30) que leva a carga; com Terra vira pedra, com Gelo vira cristal | 15 / 1,5 s |
-| W | **Bênção / Maldição** | aliado ou você: cura 30 e protege contra os elementos da carga; inimigo: a carga + lento 40% e +20% de dano recebido por 4 s | 30 / 8 s |
-| E | **Raio laser** | feixe contínuo de 1,5 s (35/s) na direção do mouse, com a carga | 35 / 6 s |
+| Q | **Orbe volátil** | projétil (30) que leva a carga. **Com carga:** cada elemento deixa a orbe 30% maior e ela **explode em área** (1,5 m + 0,75 m por elemento; Fogo +1 m) com 60% do dano e a carga em quem estiver perto. Terra empurra mais, Gravidade puxa para o centro, Raio salta para mais 2 inimigos | 15 / 1,5 s |
+| W | **Bênção / Maldição** | toque: aliado ou você: cura 30 e protege contra os elementos da carga; inimigo: a carga + lento 40% e +20% de dano recebido por 4 s | 30 / 8 s |
+| W (segurar 1,5 s) | **Bolha de escudo** | bolha de 3 m no Mago por 4 s: barreira de 60 nele e nos aliados dentro; a carga dá um poder (tabela abaixo). Enquanto segura, anda na metade da velocidade | 30 / 8 s |
+| E | **Mini meteoro** | cai no cursor (até 14 m) após 0,6 s: 40 + a carga num raio de 3,5 m e deixa uma **zona de 3 s** com o efeito de cada elemento (tabela abaixo) | 35 / 7 s |
 | R | **Ultimate** | ver tabela abaixo | 80 / 60 s |
+
+**Bolha de escudo (W segurado) com a carga**
+| Elemento | Poder da bolha |
+|---|---|
+| Fogo, Frio, Raio, Vapor, Gelo | aplica o elemento (fraco, 4× por segundo) nos inimigos dentro |
+| Água | limpa queimadura, cegueira e sangramento dos aliados dentro |
+| Vida | cura 8/s os aliados dentro |
+| Terra | barreira mais forte (100) |
+| Escudo | dura o dobro e **apaga** projéteis inimigos que entram |
+| Arcano | **reflete** projéteis inimigos de volta |
+| Vazio | **apaga** projéteis inimigos que entram |
+| Gravidade | empurra os inimigos para fora |
+| Fumaça | aliados dentro ficam invisíveis |
+| Sangue | aliados dentro roubam vida |
+
+**Zonas do Mini meteoro** (`scripts/gameplay/zone.gd`): 2 iguais = 1,5×, 3 iguais = 2×; elementos diferentes somam os efeitos. Afetam só inimigos (os bons, só aliados).
+| Elemento | Zona |
+|---|---|
+| Gravidade | **magnetismo**: puxa os inimigos para o centro por 3 s |
+| Fogo | **chão em brasa**: 12 de dano por segundo e queima |
+| Frio | lentidão de 50%; quem fica 2,5 s dentro **congela** |
+| Gelo | **estilhaços** ao cair: 30 de dano e empurra |
+| Raio | **campo elétrico**: um raio (20) a cada 0,5 s num inimigo dentro |
+| Água | **onda** ao cair: molha e empurra para fora; mantém molhado (combo com Raio) |
+| Vapor | **nuvem escaldante**: 10/s e lentidão |
+| Terra | **cratera**: +40 no impacto e atordoa 0,75 s |
+| Arcano | **fenda instável**: explode de novo (50) depois de 1,5 s |
+| Vida | **fonte**: cura 10/s os aliados |
+| Escudo | **domo**: aliados dentro levam metade do dano |
+| Vazio | **buraco do vazio**: tira proteções e drena 10 de mana/s |
+| Fumaça | **nuvem**: cega os inimigos e esconde os aliados |
+| Sangue | **poça**: 4/s e sangramento (quem lançou rouba vida) |
 
 **Assassino**
 | Tecla | Skill | Efeito | Mana / recarga |
 |---|---|---|---|
 | Q | **Adaga** | projétil rápido (24) com a carga; **pelas costas 2×** | 12 / 2 s |
-| W | **Véu / Marca** | aliado ou você: **invisível** por 2,5 s (os inimigos ignoram; agir revela); inimigo: a carga + **marcado** (+30% de dano recebido) por 4 s | 25 / 10 s |
+| W | **Véu / Marca** | aliado ou você: **invisível** por 2,5 s (os inimigos ignoram; agir revela); inimigo: a carga + **marcado** (+30% de dano recebido) por 4 s. **Vida e Escudo na carga são sempre para o Assassino** (cura 30 / barreira de 40), mesmo mirando num inimigo | 25 / 10 s |
 | E | **Passo sombrio** | salta até 6 m na direção do mouse e solta a carga (+25) em quem estiver a 2,5 m de onde cai | 25 / 8 s |
 | R | **Ultimate** | força 80% | 70 / 60 s |
 
@@ -50,8 +85,10 @@ Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 11 (fica
 | E | **Investida** | corre 7 m; quem estiver no caminho leva 30 + a carga e é empurrado | 25 / 7 s |
 | R | **Ultimate** | força 80% | 60 / 60 s |
 
-## Ultimate (R): depende da carga (`scripts/core/ultimates.gd`)
-O **elemento que mais aparece na carga** decide o ultimate (no empate, o que entrou primeiro). Os outros elementos da carga vão junto como **reforço** (por exemplo, Terra, Terra, Fogo = Terremoto que também queima). O HUD mostra qual sairia.
+## Ultimate (R): volátil, depende da combinação (`scripts/core/ultimates.gd`)
+Vale para as 3 classes. O HUD mostra qual sairia.
+- **3 elementos iguais:** a versão **MEGA** daquele elemento (segunda tabela).
+- **Senão:** o **elemento que mais aparece** decide o ultimate (no empate, o que entrou primeiro). Os outros elementos vão junto como **reforço** e cada um **deixa a sua zona** (a do Mini meteoro, 4 m por 3 s) no local do ultimate. Ex.: Fogo, Fogo, Gravidade = Meteoro que, ao cair, deixa um magnetismo que suga todo mundo.
 
 | Elemento dominante | Ultimate | Efeito |
 |---|---|---|
@@ -66,6 +103,23 @@ O **elemento que mais aparece na carga** decide o ultimate (no empate, o que ent
 | Vazio | **Eclipse** | 30 de dano + Vazio×2 nos inimigos a até 9 m: some escudo, proteção e bônus e eles perdem mana |
 | Gravidade | **Singularidade** | suga os inimigos a até 8 m do cursor para o centro, 40 de dano e atordoa 1 s |
 | Fumaça | **Cortina de fumaça** | cega os inimigos a até 8 m e deixa o seu time por perto invisível por 3 s |
+| Sangue | **Lua de sangue** | 35 de dano e sangramento nos inimigos a até 9 m; você cura metade do dano |
+
+**MEGA (3 iguais)**
+| Carga | Ultimate | Efeito |
+|---|---|---|
+| Fumaça ×3 | **Mega fumaça** | nuvem de 12 m por 3 s: os inimigos ficam **cegos** e **sem visão** (a tela e o minimapa deles escurecem); o seu time some na nuvem |
+| Fogo ×3 | **Chuva de meteoros** | 5 meteoros, um no cursor e os outros em volta, um a cada 0,3 s |
+| Raio ×3 | **Tempestade suprema** | 8 s de raios (a cada 0,3 s) que saltam para mais 2 inimigos |
+| Frio / Gelo ×3 | **Era do gelo** | congela por 3 s os inimigos a até 15 m e deixa o chão gelado (lento) por 4 s |
+| Vida ×3 | **Renascer** | revive o time com a vida cheia e +30% de velocidade por 4 s |
+| Terra ×3 | **Fenda** | rachadura de 16 m à frente: 100 de dano, atordoa 2 s e ergue muros de pedra dos lados |
+| Arcano ×3 | **Supernova** | carrega 1,5 s e explode (180) tudo a até 10 m de você |
+| Água / Vapor ×3 | **Tsunami** | onda gigante (18 m, bem larga) que molha, causa 30 e arrasta |
+| Escudo ×3 | **Bastião** | o time a até 10 m fica **invulnerável** por 3 s |
+| Vazio ×3 | **Apagão** | inimigos a até 12 m: 30 de dano, **silenciados** (sem skills) por 3 s, sem mana e sem proteções |
+| Gravidade ×3 | **Buraco negro** | vórtice de 10 m no cursor por 4 s: suga e causa 25/s |
+| Sangue ×3 | **Banquete de sangue** | 50 de dano e 6 s de sangramento nos inimigos a até 10 m; você cura **todo** o dano e o time perto ganha 30% de roubo de vida |
 
 ## Elementos
 | Elemento | Dano base* | Efeito |
@@ -83,8 +137,9 @@ O **elemento que mais aparece na carga** decide o ultimate (no empate, o que ent
 | Vazio | 25 | desfaz escudo, proteção elemental, aceleração e fortificação; drena 15 de mana |
 | Gravidade | 20 | **puxa** o alvo para quem lançou (em vez de empurrar) e deixa **pesado** (−30% de velocidade por 2 s) |
 | Fumaça | 5 | **cega** por 3 s; Água tira a fumaça |
+| Sangue | 10 | **sangramento**: 6 de dano por segundo por 4 s. Em si mesmo (W): **roubo de vida**. Nas skills de dano: quem lançou rouba 25% do dano |
 
-\* Por acerto, ou por segundo no Raio laser. Multiplicado pela força da classe e pelo nível/itens.
+\* Por acerto. Multiplicado pela força da classe e pelo nível/itens.
 
 ## Estados e interações
 - **Molhado** (Água, Vapor): Raio causa 2×. Fogo seca em vez de incendiar.
@@ -95,6 +150,10 @@ O **elemento que mais aparece na carga** decide o ultimate (no empate, o que ent
 - **Lento** (Maldição, Desafio), **marcado** (Maldição, Marca: leva mais dano), **acelerado** e **fortificado** (Grito).
 - **Cego** (Fumaça): inimigos e tropas não conseguem atacar; personagens causam metade do dano.
 - **Pesado** (Gravidade): −30% de velocidade.
+- **Sangrando** (Sangue): 6 de dano por segundo. A bolha com Água limpa.
+- **Roubo de vida** (Sangue no W, bolha, Banquete): cura uma parte do dano que você causa.
+- **Barreira** (bolha do Mago, Escudo no W, Bastião): absorve dano antes da vida. O Vazio desfaz.
+- **Silenciado** (Apagão): não usa skills (o golpe básico continua).
 - **Proteção elemental** (Bênção com carga): imune aos elementos da carga por 10 s.
 - **Empurrão**: projéteis (mais com Terra), golpe, Golpe giratório, Investida, Maremoto, Cataclismo e Meteoro. O Brutamontes resiste (30%).
 - Estruturas não queimam, não congelam, não são atordoadas nem ficam lentas.
@@ -187,7 +246,12 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 - [ ] Sem mana, a skill não sai (o ícone fica azul "sem mana")
 - [ ] W com o mouse num inimigo: ele fica lento/marcado; W no vazio: cura você
 - [ ] Um amigo cai (Arena): W com o mouse nele o levanta
-- [ ] E (Mago): Raio laser por 1,5 s
+- [ ] E (Mago): Mini meteoro no cursor; com Fogo o chão queima, com Gravidade puxa os inimigos
+- [ ] Mago: segurar W 1,5 s cria a bolha de escudo (a barra "escudo %" enche no ícone)
+- [ ] Mago: Q com 2–3 elementos sai maior e explode em área
+- [ ] R com 3 iguais (ex.: Fumaça ×3): sai a versão MEGA; quem leva a Mega fumaça fica com a tela escura
+- [ ] Assassino: W com Vida no inimigo cura o próprio Assassino; com Escudo, ele ganha barreira
+- [ ] Sangue: inimigo sangra (gotas vermelhas); com Sangue na carga, quem acerta recupera vida
 - [ ] R sem carga não sai; R com Fogo: Meteoro no cursor; o HUD mostra o ultimate da carga
 - [ ] Assassino: W em si mesmo fica invisível; Q pelas costas causa o dobro; E salta
 - [ ] Lutador: Q acerta tudo ao redor; E atropela

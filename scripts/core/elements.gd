@@ -2,7 +2,7 @@
 # Todos os números aqui são nossos e podem ser ajustados livremente.
 extends RefCounted
 
-enum Type { WATER, LIFE, SHIELD, COLD, LIGHTNING, ARCANE, EARTH, FIRE, STEAM, ICE, VOID, GRAVITY, SMOKE }
+enum Type { WATER, LIFE, SHIELD, COLD, LIGHTNING, ARCANE, EARTH, FIRE, STEAM, ICE, VOID, GRAVITY, SMOKE, BLOOD }
 
 const NONE := -1
 
@@ -20,6 +20,7 @@ const NAMES := {
 	Type.VOID: "Vazio",
 	Type.GRAVITY: "Gravidade",
 	Type.SMOKE: "Fumaça",
+	Type.BLOOD: "Sangue",
 }
 
 const COLORS := {
@@ -36,6 +37,7 @@ const COLORS := {
 	Type.VOID: Color(0.35, 0.1, 0.55),
 	Type.GRAVITY: Color(0.3, 0.35, 0.75),
 	Type.SMOKE: Color(0.5, 0.5, 0.52),
+	Type.BLOOD: Color(0.7, 0.05, 0.12),
 }
 
 # Dano por acerto (projétil/área) ou por segundo (spray/beam/arco).
@@ -54,6 +56,7 @@ const DAMAGE := {
 	Type.VOID: 25.0,
 	Type.GRAVITY: 20.0,
 	Type.SMOKE: 5.0,
+	Type.BLOOD: 10.0,
 }
 
 # Pares que se anulam quando entram juntos na fila.

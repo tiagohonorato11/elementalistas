@@ -221,6 +221,35 @@ func _test_skill_statuses() -> void:
 	health.slow(0.5, 1.0)
 	check(not health.is_disabled() and health.speed_factor() == 1.0, "estruturas ignoram atordoar e lentidão")
 	health.free()
+	_test_blood()
+
+
+func _test_blood() -> void:
+	var T = E.Type
+	var health := Health.new()
+	health.max_hp = 100.0
+	health.reset()
+	var dealt := health.apply_elements([T.BLOOD], 1.0)
+	check(health.bleeding > 0.0 and is_equal_approx(dealt, 10.0), "Sangue: 10 de dano e sangramento")
+	health._process(1.0)
+	check(is_equal_approx(health.hp, 100.0 - 10.0 - Health.BLEED_DPS), "sangrando perde vida por segundo")
+	health.reset()
+	health.add_barrier(30.0, 5.0)
+	dealt = health.damage(50.0)
+	check(is_equal_approx(health.hp, 80.0) and is_equal_approx(dealt, 50.0) and health.barrier_hp == 0.0,
+		"barreira absorve antes da vida (e conta como dano causado)")
+	health.reset()
+	health.hp = 5.0
+	check(is_equal_approx(health.damage(50.0), 5.0), "dano causado não passa da vida que restava")
+	health.reset()
+	health.lifesteal_buff(0.2, 6.0)
+	health.add_barrier(30.0, 5.0)
+	health.apply_elements([T.VOID], 1.0)
+	check(health.lifesteal == 0.0 and health.barrier_hp == 0.0, "Vazio desfaz barreira e roubo de vida")
+	health.reset()
+	health.silence(3.0)
+	check(health.silenced > 0.0 and "silenciado" in health.status_text(), "silenciado (Apagão)")
+	health.free()
 
 
 func _test_ultimates() -> void:
@@ -232,6 +261,17 @@ func _test_ultimates() -> void:
 	check(Ultimates.resolve([T.VOID]) == "eclipse" and Ultimates.resolve([T.GRAVITY, T.GRAVITY, T.SMOKE]) == "singularity"
 		and Ultimates.resolve([T.SMOKE]) == "smokescreen", "Vazio = Eclipse, Gravidade = Singularidade, Fumaça = Cortina")
 	check(Ultimates.resolve([]) == "", "sem carga não há ultimate")
+	check(Ultimates.resolve([T.BLOOD]) == "blood_moon", "Sangue = Lua de sangue")
+	check(Ultimates.resolve([T.SMOKE, T.SMOKE, T.SMOKE]) == "mega_smoke"
+		and Ultimates.resolve([T.FIRE, T.FIRE, T.FIRE]) == "mega_fire", "3 iguais = MEGA (Fumaça, Fogo)")
+	check(Ultimates.resolve([T.FIRE, T.FIRE]) == "meteor", "2 iguais ainda não é MEGA")
+	check(Ultimates.zone_elements([T.FIRE, T.GRAVITY, T.FIRE]) == [T.GRAVITY], "o secundário deixa zona")
+	check(Ultimates.zone_elements([T.FIRE, T.GRAVITY, T.SMOKE]) == [T.GRAVITY, T.SMOKE], "3 diferentes: 2 zonas")
+	check(Ultimates.zone_elements([T.VOID, T.VOID, T.VOID]).is_empty(), "MEGA não deixa zona extra")
+	var all_megas := true
+	for element in Loadout.BASIC:
+		all_megas = all_megas and Ultimates.ULTIMATES.has(Ultimates.resolve([element, element, element]))
+	check(all_megas, "todo elemento tem versão MEGA")
 	var all_mapped := true
 	for element in Loadout.BASIC:
 		all_mapped = all_mapped and Ultimates.ULTIMATES.has(Ultimates.resolve([element]))

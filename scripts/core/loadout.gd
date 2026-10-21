@@ -1,4 +1,4 @@
-# Escolha de elementos antes da partida: 3 elementos diferentes entre os 11,
+# Escolha de elementos antes da partida: 3 elementos diferentes entre os 12,
 # sem pares opostos (eles se anulariam na carga). O 1º fica na tecla D, o 2º
 # no F e o 3º no G. Lógica pura, para ser testável.
 extends RefCounted
@@ -8,7 +8,7 @@ const E = preload("res://scripts/core/elements.gd")
 const SIZE := 3
 const BASIC := [E.Type.WATER, E.Type.LIFE, E.Type.SHIELD, E.Type.COLD,
 	E.Type.LIGHTNING, E.Type.ARCANE, E.Type.EARTH, E.Type.FIRE,
-	E.Type.VOID, E.Type.GRAVITY, E.Type.SMOKE]
+	E.Type.VOID, E.Type.GRAVITY, E.Type.SMOKE, E.Type.BLOOD]
 const DEFAULTS := {
 	"mage": [E.Type.FIRE, E.Type.LIGHTNING, E.Type.ARCANE],
 	"assassin": [E.Type.ARCANE, E.Type.COLD, E.Type.EARTH],

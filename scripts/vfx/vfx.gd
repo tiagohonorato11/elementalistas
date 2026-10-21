@@ -20,6 +20,7 @@ const STYLES := {
 	E.Type.VOID: {"colors": [Color(0.55, 0.2, 0.85, 1.0), Color(0.08, 0.0, 0.15, 0.9), Color(0.0, 0.0, 0.0, 0.0)], "additive": false, "gravity": 0.0, "size": 0.24},
 	E.Type.GRAVITY: {"colors": [Color(0.6, 0.65, 1.0, 1.0), Color(0.25, 0.3, 0.7, 0.0)], "additive": true, "gravity": -16.0, "size": 0.16},
 	E.Type.SMOKE: {"colors": [Color(0.55, 0.55, 0.58, 0.8), Color(0.3, 0.3, 0.33, 0.0)], "additive": false, "gravity": 1.2, "size": 0.6},
+	E.Type.BLOOD: {"colors": [Color(0.85, 0.08, 0.12, 1.0), Color(0.4, 0.0, 0.03, 0.0)], "additive": false, "gravity": -9.0, "size": 0.14},
 }
 
 static var _soft_texture: Texture2D

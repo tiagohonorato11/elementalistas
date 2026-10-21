@@ -5,7 +5,6 @@
 extends Node
 
 const E = preload("res://scripts/core/elements.gd")
-const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 
 
 class Driver extends Node:
@@ -75,15 +74,26 @@ class Driver extends Node:
 		await _seconds(0.1)
 		_check(player.health.hp >= 200.0 - 80.0 + 29.0 and player.health.ward > 0.0, "W no vazio: Bênção em si mesmo (hp=%d)" % player.health.hp)
 
-		# 4) E: Raio laser contínuo na direção do mouse.
+		# 4) E: Mini meteoro cai no cursor.
 		_reset(dummy, Vector3(0, 0, -6))
 		player.aim_point = dummy.global_position
 		await _seconds(0.1)
 		_key(KEY_E)
+		await _seconds(0.9)
+		_check(dummy.health.hp <= 460.0, "E: Mini meteoro cai no cursor (hp=%d)" % dummy.health.hp)
+
+		# 4b) Segurar W por 1,5 s: bolha de escudo (anda mais devagar enquanto segura).
+		player.skill_cooldowns = {}
+		player.mana = player.max_mana
+		player.aim_point = Vector3(5, 0, 5)
+		_press(KEY_W, true)
 		await _seconds(0.5)
-		_check(player.fx_shape == SpellResolver.Shape.BEAM and dummy.health.hp < 490.0, "E: Raio laser acerta (hp=%d)" % dummy.health.hp)
-		await _seconds(1.3)
-		_check(player.fx_shape == SpellResolver.Shape.NONE, "o laser termina sozinho")
+		_check(player.hold_progress() > 0.2 and player.bubble_time == 0.0, "segurando W: carregando o escudo")
+		await _seconds(1.2)
+		_check(player.bubble_time > 0.0 and player.health.barrier_hp > 0.0, "W segurado 1,5 s: bolha de escudo")
+		_press(KEY_W, false)
+		await _seconds(0.1)
+		_check(player.hold_progress() == 0.0, "soltar depois da bolha não lança outra skill")
 
 		# 5) R sem carga não sai; com carga, sai o ultimate do elemento dominante.
 		_key(KEY_R)

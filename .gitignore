@@ -5,3 +5,4 @@ build/
 /Elementistas.exe
 /Elementistas.new.exe
 tools/last_build.log
+.tmp.driveupload/

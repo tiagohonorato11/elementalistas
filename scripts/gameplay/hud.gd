@@ -32,12 +32,14 @@ var _legend: Array = []  # [PanelContainer, Label] das teclas D F G
 var _legend_shown: Array = []
 var mana_bar: ProgressBar
 var mana_label: Label
+var minimap: Control
+var blackout_rect: ColorRect   # Mega fumaça: a visão some
 
 const SHORT_NAMES := {
 	E.Type.WATER: "Água", E.Type.LIFE: "Vida", E.Type.SHIELD: "Esc.", E.Type.COLD: "Frio",
 	E.Type.LIGHTNING: "Raio", E.Type.ARCANE: "Arc.", E.Type.EARTH: "Terra", E.Type.FIRE: "Fogo",
 	E.Type.STEAM: "Vapor", E.Type.ICE: "Gelo",
-	E.Type.VOID: "Vazio", E.Type.GRAVITY: "Grav.", E.Type.SMOKE: "Fum.",
+	E.Type.VOID: "Vazio", E.Type.GRAVITY: "Grav.", E.Type.SMOKE: "Fum.", E.Type.BLOOD: "Sang.",
 }
 
 
@@ -51,7 +53,14 @@ func _ready() -> void:
 	_build_mana_bar()
 	_build_queue_row()
 	_build_legend_row()
-	var minimap := Minimap.new()
+	blackout_rect = ColorRect.new()
+	blackout_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	blackout_rect.color = Color(0.08, 0.08, 0.09, 0.93)
+	blackout_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	blackout_rect.visible = false
+	add_child(blackout_rect)
+	move_child(blackout_rect, 0)
+	minimap = Minimap.new()
 	minimap.main = get_parent()
 	add_child(minimap)
 
@@ -79,6 +88,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var dark: bool = is_instance_valid(player) and player.health.blackout > 0.0
+	blackout_rect.visible = dark
+	minimap.visible = not dark
 	_update_status()
 	_update_queue_row()
 	_update_skills()
@@ -199,9 +211,18 @@ func _update_specials() -> void:
 	var id := Ultimates.resolve(player.queue_view)
 	var key := Keybinds.action_text("skill_r")
 	if id.is_empty():
-		specials_label.text = "Ultimate (%s): carregue elementos" % key
-	else:
-		specials_label.text = "Ultimate (%s): %s\n%s" % [key, Ultimates.label(id), Ultimates.ULTIMATES[id].description]
+		specials_label.text = "Ultimate (%s): carregue elementos (3 iguais = MEGA)" % key
+		return
+	var title := Ultimates.label(id)
+	if Ultimates.is_mega(player.queue_view):
+		title = "MEGA " + title
+	specials_label.text = "Ultimate (%s): %s\n%s" % [key, title, Ultimates.ULTIMATES[id].description]
+	var zones := Ultimates.zone_elements(player.queue_view)
+	if not zones.is_empty():
+		var names := PackedStringArray()
+		for element in zones:
+			names.append(E.NAMES[element])
+		specials_label.text += "\n+ zona de " + ", ".join(names)
 
 
 func _update_wave() -> void:
@@ -340,6 +361,11 @@ func _update_skills() -> void:
 		elif player.mana < skill.cost:
 			color = NO_MANA_COLOR
 			state = "sem mana"
+		elif player.health.silenced > 0.0:
+			color = COOLDOWN_COLOR
+			state = "silenciado"
+		if skill.has("hold") and player.hold_progress() > 0.0:
+			state = "escudo %d%%" % roundi(player.hold_progress() * 100.0)
 		var skill_name: String = skill.label
 		if slot == "r":
 			var id := Ultimates.resolve(player.queue_view)
@@ -359,7 +385,7 @@ const ELEMENT_SOUNDS := {
 	E.Type.COLD: "element_cold", E.Type.LIGHTNING: "element_lightning", E.Type.ARCANE: "element_arcane",
 	E.Type.EARTH: "element_earth", E.Type.FIRE: "element_fire", E.Type.STEAM: "element_water",
 	E.Type.ICE: "element_cold", E.Type.VOID: "element_void", E.Type.GRAVITY: "element_gravity",
-	E.Type.SMOKE: "element_smoke",
+	E.Type.SMOKE: "element_smoke", E.Type.BLOOD: "element_blood",
 }
 var _last_queue: Array = []
 
@@ -391,7 +417,7 @@ func _help_text() -> String:
 	var lines := PackedStringArray([
 		"Andar: %s no chão | Golpe: %s | Carregar elementos: %s %s %s (até 3, a próxima skill usa)" % [
 			k.call("move_to_cursor"), k.call("cast_weapon"), k.call("charge_1"), k.call("charge_2"), k.call("charge_3")],
-		"Skills: %s %s %s %s (W: no aliado ou inimigo sob o mouse; R depende da carga) | Esc: sair para o lobby" % [
+		"Skills: %s %s %s %s (W: no aliado ou inimigo sob o mouse; R depende da carga; Mago: segure W = escudo) | Esc: lobby" % [
 			k.call("skill_q"), k.call("skill_w"), k.call("skill_e"), k.call("skill_r")],
 	])
 	return "\n".join(lines)

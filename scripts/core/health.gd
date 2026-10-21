@@ -1,7 +1,9 @@
 # Vida + estados (molhado, queimando, resfriado, congelado, escudo, proteção) e interações.
 # Estados das skills: lento, vulnerável (leva mais dano), atordoado, acelerado e fortificado.
 # Novos elementos: Vazio (desfaz proteções e drena mana), Gravidade (pesado = lento;
-# o puxão é aplicado por quem acerta) e Fumaça (cego: erra os ataques).
+# o puxão é aplicado por quem acerta), Fumaça (cego: erra os ataques) e Sangue
+# (sangrando: dano por segundo; o roubo de vida é aplicado por quem acerta).
+# Barreira: vida extra que absorve dano antes da vida (bolha do Mago, Escudo no W).
 extends Node
 
 const E = preload("res://scripts/core/elements.gd")
@@ -22,6 +24,9 @@ const VOID_MANA_DRAIN := 15.0
 const BLIND_TIME := 3.0
 const HEAVY_SLOW := 0.3
 const HEAVY_TIME := 2.0
+const BLEED_DPS := 6.0
+const BLEED_TIME := 4.0
+const INVULNERABLE_BARRIER := 99999.0   # Bastião: barreira que não acaba
 
 @export var max_hp := 100.0
 # Quem pode ser levantado com Vida depois de cair (os magos).
@@ -54,6 +59,13 @@ var haste_amount := 0.0
 var fortified := 0.0         # leva -fortify_amount de dano
 var fortify_amount := 0.0
 var blinded := 0.0           # cego (Fumaça): os ataques erram / causam metade do dano
+var blackout := 0.0          # Mega fumaça: a tela do jogador escurece
+var bleeding := 0.0          # sangrando (Sangue): perde vida por segundo
+var lifesteal := 0.0         # roubo de vida: cura lifesteal_amount do dano causado
+var lifesteal_amount := 0.0
+var barrier := 0.0           # tempo restante da barreira
+var barrier_hp := 0.0        # dano que a barreira ainda absorve
+var silenced := 0.0          # Apagão (Vazio): não usa skills
 var dead := false
 
 
@@ -76,18 +88,27 @@ func reset() -> void:
 	hasted = 0.0
 	fortified = 0.0
 	blinded = 0.0
+	blackout = 0.0
+	bleeding = 0.0
+	lifesteal = 0.0
+	barrier = 0.0
+	barrier_hp = 0.0
+	silenced = 0.0
 	dead = false
 
 
 # scale = 1.0 para acertos únicos; scale = delta para efeitos contínuos.
-func apply_elements(elements: Array, scale: float) -> void:
+# Devolve o dano causado (para o roubo de vida).
+func apply_elements(elements: Array, scale: float) -> float:
+	var dealt := 0.0
 	for element in elements:
-		_apply(element, scale)
+		dealt += _apply(element, scale)
+	return dealt
 
 
-# Dano direto, sem elemento (ex.: golpe corpo a corpo).
-func damage(amount: float) -> void:
-	_change_hp(-amount)
+# Dano direto, sem elemento (ex.: golpe corpo a corpo). Devolve o dano causado.
+func damage(amount: float) -> float:
+	return _change_hp(-amount)
 
 
 # Cura direta (ex.: fonte da base no MOBA). Não passa pela armadura.
@@ -99,6 +120,33 @@ func heal(amount: float) -> void:
 func set_ward(elements: Array) -> void:
 	ward_elements = elements.duplicate()
 	ward = WARD_TIME
+
+
+# Absorve `amount` de dano por `duration` s (não soma: fica a maior).
+func add_barrier(amount: float, duration: float) -> void:
+	if dead:
+		return
+	barrier_hp = maxf(barrier_hp, amount)
+	barrier = maxf(barrier, duration)
+
+
+func lifesteal_buff(amount: float, duration: float) -> void:
+	if dead:
+		return
+	lifesteal_amount = maxf(amount, lifesteal_amount if lifesteal > 0.0 else 0.0)
+	lifesteal = maxf(lifesteal, duration)
+
+
+func bleed(duration: float) -> void:
+	if dead or immune_status:
+		return
+	bleeding = maxf(bleeding, duration)
+
+
+func silence(duration: float) -> void:
+	if dead or immune_status:
+		return
+	silenced = maxf(silenced, duration)
 
 
 func freeze(duration: float) -> void:
@@ -169,21 +217,19 @@ func revive() -> void:
 	revived.emit()
 
 
-func _apply(element: int, scale: float) -> void:
+func _apply(element: int, scale: float) -> float:
 	if dead:
 		if element == E.Type.LIFE and revivable:
 			revive()
-		return
+		return 0.0
 	if ward > 0.0 and element in ward_elements:
-		return
+		return 0.0
 	var multiplier: float = resistances.get(element, 1.0)
 	if multiplier <= 0.0:
-		return
+		return 0.0
 	var amount: float = E.DAMAGE[element] * scale * multiplier
 	if immune_status:
-		if amount > 0.0:
-			_change_hp(-amount)
-		return
+		return _change_hp(-amount) if amount > 0.0 else 0.0
 	if element == E.Type.WATER or element == E.Type.STEAM:
 		burning = 0.0
 		blinded = 0.0
@@ -211,32 +257,39 @@ func _apply(element: int, scale: float) -> void:
 		amount *= 2.0
 		frozen = 0.0
 	elif element == E.Type.VOID:
-		_void(scale)
+		dispel(scale)
 	elif element == E.Type.GRAVITY:
 		slow(HEAVY_SLOW, HEAVY_TIME)
 	elif element == E.Type.SMOKE:
 		blinded = maxf(blinded, BLIND_TIME)
-	_change_hp(-amount)
+	elif element == E.Type.BLOOD:
+		bleed(BLEED_TIME)
+	return _change_hp(-amount)
 
 
-# Vazio: some escudo, proteção e bônus; personagens perdem mana.
-func _void(scale: float) -> void:
+# Vazio: some escudo, barreira, proteção e bônus; personagens perdem mana.
+func dispel(scale: float) -> void:
 	shielded = 0.0
+	barrier = 0.0
+	barrier_hp = 0.0
 	ward = 0.0
 	ward_elements = []
 	hasted = 0.0
 	fortified = 0.0
+	lifesteal = 0.0
 	var unit := get_parent()
 	if unit != null and unit.get("mana") != null:
 		unit.mana = maxf(unit.mana - VOID_MANA_DRAIN * scale, 0.0)
 
 
-func _change_hp(delta_hp: float) -> void:
+# Devolve o dano causado (vida perdida + o que a barreira absorveu).
+func _change_hp(delta_hp: float) -> float:
 	if dead:
-		return
+		return 0.0
+	var absorbed := 0.0
 	if delta_hp < 0.0:
 		if invulnerable:
-			return
+			return 0.0
 		delta_hp *= 1.0 - armor
 		if shielded > 0.0:
 			delta_hp *= 0.5
@@ -245,10 +298,15 @@ func _change_hp(delta_hp: float) -> void:
 		if fortified > 0.0:
 			delta_hp *= 1.0 - fortify_amount
 		damaged.emit(-delta_hp)
+		absorbed = minf(barrier_hp, -delta_hp)
+		barrier_hp -= absorbed
+		delta_hp += absorbed
+	var before := hp
 	hp = clampf(hp + delta_hp, 0.0, max_hp)
 	if hp <= 0.0:
 		dead = true
 		died.emit()
+	return absorbed + maxf(before - hp, 0.0)
 
 
 func _process(delta: float) -> void:
@@ -266,6 +324,15 @@ func _process(delta: float) -> void:
 	hasted = maxf(hasted - delta, 0.0)
 	fortified = maxf(fortified - delta, 0.0)
 	blinded = maxf(blinded - delta, 0.0)
+	blackout = maxf(blackout - delta, 0.0)
+	lifesteal = maxf(lifesteal - delta, 0.0)
+	silenced = maxf(silenced - delta, 0.0)
+	barrier = maxf(barrier - delta, 0.0)
+	if barrier <= 0.0:
+		barrier_hp = 0.0
+	if bleeding > 0.0:
+		bleeding = maxf(bleeding - delta, 0.0)
+		_change_hp(-BLEED_DPS * delta)
 	if burning > 0.0:
 		burning = maxf(burning - delta, 0.0)
 		_change_hp(-BURN_DPS * delta)
@@ -295,6 +362,14 @@ func status_text() -> String:
 		parts.append("fortificado")
 	if blinded > 0.0:
 		parts.append("cego")
+	if bleeding > 0.0:
+		parts.append("sangrando")
+	if lifesteal > 0.0:
+		parts.append("roubo de vida")
+	if barrier_hp > 0.0:
+		parts.append("invulnerável" if barrier_hp >= INVULNERABLE_BARRIER * 0.5 else "barreira %d" % ceili(barrier_hp))
+	if silenced > 0.0:
+		parts.append("silenciado")
 	if ward > 0.0:
 		var names := PackedStringArray()
 		for element in ward_elements:

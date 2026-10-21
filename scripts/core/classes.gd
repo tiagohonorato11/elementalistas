@@ -9,28 +9,33 @@ const SLOTS := ["q", "w", "e", "r"]
 
 # Em toda skill: label, cost (mana), cooldown (s) e os números próprios dela.
 # W é dupla: aliado/si mesmo (ally) ou inimigo sob o mouse (enemy).
+# Mago: skills voláteis (o efeito muda com a carga). "hold": segurar a tecla
+# por esse tempo troca a skill (W segurado = bolha de escudo).
 const CLASSES := {
 	"mage": {
 		"label": "Mago",
-		"description": "Q Orbe | W Bênção (aliado) ou Maldição (inimigo) | E Raio laser | R Ultimate. Muita mana.",
+		"description": "Q Orbe volátil | W Bênção/Maldição (segure: bolha de escudo) | E Mini meteoro | R Ultimate. Muita mana.",
 		"hp": 200.0, "speed": 5.0, "armor": 0.0,
 		"mana": 160.0, "mana_regen": 5.0,
 		"spell_power": 1.0,
 		"weapon": {"damage": 20.0, "cooldown": 0.6, "range": 2.3, "angle": 1.05, "push": 4.0},
 		"backstab": 1.0,
 		"skills": {
+			# Com carga: cresce e explode em área (splash = fração do dano nos outros).
 			"q": {"id": "orb", "label": "Orbe", "cost": 15.0, "cooldown": 1.5,
-				"damage": 30.0, "speed": 20.0},
+				"damage": 30.0, "speed": 20.0, "splash": 0.6},
 			"w": {"id": "bless_curse", "label": "Bênção/Maldição", "cost": 30.0, "cooldown": 8.0,
-				"heal": 30.0, "slow": 0.4, "vulnerable": 0.2, "duration": 4.0},
-			"e": {"id": "laser", "label": "Raio laser", "cost": 35.0, "cooldown": 6.0,
-				"dps": 35.0, "duration": 1.5, "range": 20.0},
+				"heal": 30.0, "slow": 0.4, "vulnerable": 0.2, "duration": 4.0,
+				"hold": 1.5, "barrier": 60.0, "bubble_time": 4.0, "bubble_radius": 3.0},
+			# Cai no cursor e deixa uma zona com o efeito de cada elemento da carga.
+			"e": {"id": "mini_meteor", "label": "Mini meteoro", "cost": 35.0, "cooldown": 7.0,
+				"damage": 40.0, "radius": 3.5, "zone_time": 3.0, "range": 14.0},
 			"r": {"id": "ultimate", "label": "Ultimate", "cost": 80.0, "cooldown": 60.0, "power": 1.0},
 		},
 	},
 	"assassin": {
 		"label": "Assassino",
-		"description": "Q Adaga (2x pelas costas) | W Véu (aliado: invisível) ou Marca (inimigo) | E Passo sombrio | R Ultimate. Rápido e frágil.",
+		"description": "Q Adaga (2x pelas costas) | W Véu (aliado: invisível) ou Marca (inimigo); Vida e Escudo no W são para ele | E Passo sombrio | R Ultimate. Rápido e frágil.",
 		"hp": 140.0, "speed": 6.5, "armor": 0.0,
 		"mana": 110.0, "mana_regen": 6.0,
 		"spell_power": 0.8,

@@ -30,7 +30,7 @@ const MELEE_ANIMS := {
 }
 # Animação de cada skill.
 const SKILL_ANIMS := {
-	"orb": "Spellcast_Shoot", "bless_curse": "Spellcast_Raise", "laser": "Spellcast_Long",
+	"orb": "Spellcast_Shoot", "bless_curse": "Spellcast_Raise", "mini_meteor": "Spellcast_Long",
 	"dagger": "Throw", "veil_mark": "Spellcast_Raise", "shadow_step": "Dodge_Forward",
 	"whirl": "2H_Melee_Attack_Spin", "shout": "Spellcast_Raise", "charge": "2H_Melee_Attack_Spin",
 	"ultimate": "Spellcast_Long",
@@ -53,6 +53,21 @@ const DASH_SPEED := 20.0         # 20 m/s por 0,35 s = 7 m
 const DASH_HIT_RADIUS := 1.6
 const GRAVITY_PULL := 7.0        # puxão por Gravidade na carga
 const BLIND_FACTOR := 0.5        # cego (Fumaça): metade do dano
+const BLOOD_STEAL := 0.25        # Sangue na carga: rouba 25% do dano causado (por Sangue)
+const LIFESTEAL_BUFF := 0.2      # Sangue em si mesmo/aliado: roubo de vida de 20% (por Sangue)
+const LIFESTEAL_TIME := 6.0
+const SELF_HEAL := 30.0          # Vida no W (Assassino: sempre nele mesmo)
+const SELF_BARRIER := 40.0       # Escudo no W: barreira (por Escudo)
+const SELF_BARRIER_TIME := 5.0
+const HOLD_SLOW := 0.5           # segurando o W (Mago): anda mais devagar
+const BUBBLE_TICK := 0.25
+const BUBBLE_STRENGTH := 0.15    # força dos elementos da bolha nos inimigos dentro, por pulso
+const BUBBLE_EARTH_BONUS := 40.0
+const BUBBLE_HEAL := 8.0         # Vida na bolha: cura por segundo
+const BUBBLE_PUSH := 6.0
+# Elementos que na bolha têm efeito próprio (os outros atingem os inimigos dentro).
+const BUBBLE_SPECIAL := [E.Type.LIFE, E.Type.WATER, E.Type.SMOKE, E.Type.BLOOD, E.Type.SHIELD,
+	E.Type.EARTH, E.Type.ARCANE, E.Type.VOID, E.Type.GRAVITY]
 
 # Empurrão.
 const PUSH_DECAY := 18.0
@@ -85,6 +100,41 @@ const SINGULARITY_DAMAGE := 40.0
 const SINGULARITY_STUN := 1.0
 const SMOKESCREEN_RADIUS := 8.0
 const SMOKESCREEN_HIDE := 3.0
+const ZONE_RADIUS := 4.0         # zona dos elementos secundários do ultimate
+const ZONE_TIME := 3.0
+const BLOOD_MOON_RADIUS := 9.0
+const BLOOD_MOON_DAMAGE := 35.0
+# MEGA (3 elementos iguais).
+const RAIN_METEORS := 5
+const RAIN_SPREAD := 5.0
+const RAIN_DELAY := 0.3
+const MEGA_STORM_TIME := 8.0
+const MEGA_STORM_INTERVAL := 0.3
+const MEGA_STORM_CHAIN := 2
+const ICE_AGE_RADIUS := 15.0
+const ICE_AGE_FREEZE := 3.0
+const FISSURE_LENGTH := 16.0
+const FISSURE_WIDTH := 2.0
+const FISSURE_DAMAGE := 100.0
+const FISSURE_STUN := 2.0
+const SUPERNOVA_DELAY := 1.5
+const SUPERNOVA_RADIUS := 10.0
+const SUPERNOVA_DAMAGE := 180.0
+const TSUNAMI_RANGE := 18.0
+const TSUNAMI_ANGLE := 1.3
+const TSUNAMI_DAMAGE := 30.0
+const BASTION_RADIUS := 10.0
+const BASTION_TIME := 3.0
+const BLACKOUT_RADIUS := 12.0
+const BLACKOUT_TIME := 3.0
+const BLACK_HOLE_RADIUS := 10.0
+const BLACK_HOLE_TIME := 4.0
+const BLACK_HOLE_DPS := 25.0
+const MEGA_SMOKE_RADIUS := 12.0
+const FEAST_RADIUS := 10.0
+const FEAST_DAMAGE := 50.0
+const FEAST_BLEED := 6.0
+const FEAST_TEAM_STEAL := 0.3
 
 # Ações configuráveis (ver scripts/ui/keybinds.gd).
 const CHARGE_ACTIONS := ["charge_1", "charge_2", "charge_3"]
@@ -126,6 +176,8 @@ var mana := 0.0
 var max_mana := 0.0
 var skill_cooldowns := {}         # "q"/"w"/"e"/"r" -> segundos restantes
 var invisible := 0.0              # Véu/Passo sombrio: os inimigos ignoram
+var bubble_time := 0.0            # bolha de escudo do Mago (W segurado)
+var bubble_elements: Array = []
 
 # Só usados no host.
 var queue := ElementQueue.new()
@@ -140,6 +192,13 @@ var storm_time := 0.0
 var storm_tick := 0.0
 var storm_elements: Array = []
 var storm_scale := 1.0
+var storm_interval := STORM_INTERVAL
+var storm_chain := 0              # Tempestade suprema: raios que saltam
+var _bubble_tick := 0.0
+var _bubble_mesh: MeshInstance3D
+var _bubble_shown: Array = []
+var _hold_slot := ""              # skill segurada (dono): decide ao soltar ou ao completar
+var _hold_time := 0.0
 var dash_hit_time := 0.0      # Investida em andamento (host)
 var dash_direction := Vector3.ZERO
 var dash_elements: Array = []
@@ -200,10 +259,12 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_elements", ".:fx_length", ".:fx_width",
 		".:mana", ".:max_mana", ".:skill_cooldowns", ".:invisible", ".:action_anim", ".:action_count",
+		".:bubble_time", ".:bubble_elements",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements", "Health:max_hp",
 		"Health:stunned", "Health:slowed", "Health:slow_amount", "Health:hasted", "Health:haste_amount",
-		"Health:vulnerable", "Health:fortified", "Health:blinded",
+		"Health:vulnerable", "Health:fortified", "Health:blinded", "Health:blackout", "Health:bleeding",
+		"Health:lifesteal", "Health:barrier_hp", "Health:silenced",
 		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
 	])
 	set_multiplayer_authority(peer_id, false)
@@ -281,8 +342,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			request_charge.rpc_id(1, slot)
 			return
 	for action in SKILL_ACTIONS:
+		var slot: String = SKILL_ACTIONS[action]
 		if event.is_action_pressed(action):
-			request_skill.rpc_id(1, SKILL_ACTIONS[action], aim_point, hover_target_name())
+			if Classes.skill(class_id, slot).has("hold"):
+				# Segurável (W do Mago): toque rápido ou segurar até completar.
+				_hold_slot = slot
+				_hold_time = 0.0
+			else:
+				request_skill.rpc_id(1, slot, aim_point, hover_target_name())
+			return
+		if event.is_action_released(action) and slot == _hold_slot:
+			_release_hold(false)
 			return
 	if event.is_action_pressed("move_to_cursor"):
 		_show_move_marker(aim_point)
@@ -315,8 +385,52 @@ func _physics_process(delta: float) -> void:
 		_update_host(delta)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_body_visual()
+	_update_bubble_visual()
+	if not _hold_slot.is_empty():
+		_hold_time += delta
+		if _hold_time >= Classes.skill(class_id, _hold_slot).hold:
+			_release_hold(true)
+
+
+# Soltou (toque: skill normal) ou completou o tempo (versão segurada).
+func _release_hold(held: bool) -> void:
+	var slot := _hold_slot
+	_hold_slot = ""
+	_hold_time = 0.0
+	if health.dead:
+		return
+	if held:
+		request_skill_held.rpc_id(1, slot, aim_point, hover_target_name())
+	else:
+		request_skill.rpc_id(1, slot, aim_point, hover_target_name())
+
+
+# 0 a 1 enquanto segura uma skill (barra no HUD); 0 sem segurar.
+func hold_progress() -> float:
+	if _hold_slot.is_empty():
+		return 0.0
+	return clampf(_hold_time / Classes.skill(class_id, _hold_slot).hold, 0.0, 1.0)
+
+
+# Bolha de escudo: esfera em volta do Mago, na cor dos elementos.
+func _update_bubble_visual() -> void:
+	var active := bubble_time > 0.0 and not health.dead
+	if active and _bubble_mesh == null:
+		_bubble_mesh = MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = Classes.skill(class_id, "w").get("bubble_radius", 3.0)
+		sphere.height = sphere.radius * 2.0
+		_bubble_mesh.mesh = sphere
+		add_child(_bubble_mesh)
+	if _bubble_mesh == null:
+		return
+	if active and bubble_elements != _bubble_shown:
+		_bubble_shown = bubble_elements.duplicate()
+		var look := bubble_elements if not bubble_elements.is_empty() else [E.Type.SHIELD]
+		_bubble_mesh.material_override = Vfx.glow_material(Vfx.mix_color(look), 0.8, 0.16)
+	_bubble_mesh.visible = active
 
 
 # Invisível (Passo sombrio): quase transparente. Caído: a animação de queda.
@@ -359,6 +473,8 @@ func _move_local(delta: float) -> void:
 	var speed: float = (cls.speed + speed_bonus) * health.speed_factor()
 	if fx_shape != SpellResolver.Shape.NONE:
 		speed *= 0.4
+	if not _hold_slot.is_empty():
+		speed *= HOLD_SLOW
 	direction = direction.normalized()
 	velocity.x = direction.x * speed + push_velocity.x
 	velocity.z = direction.z * speed + push_velocity.z
@@ -484,7 +600,18 @@ func request_weapon(aim: Vector3) -> void:
 # `target_name`: unidade sob o mouse (para o W). Gasta mana, entra em recarga e consome a carga.
 @rpc("any_peer", "call_local", "reliable")
 func request_skill(slot: String, aim_point_seen: Vector3, target_name: String) -> void:
-	if not _from_owner() or _is_channeling():
+	_try_skill(slot, aim_point_seen, target_name, false)
+
+
+# Versão segurada da skill (W do Mago segurado 1,5 s: bolha de escudo).
+@rpc("any_peer", "call_local", "reliable")
+func request_skill_held(slot: String, aim_point_seen: Vector3, target_name: String) -> void:
+	if Classes.skill(class_id, slot).has("hold"):
+		_try_skill(slot, aim_point_seen, target_name, true)
+
+
+func _try_skill(slot: String, aim_point_seen: Vector3, target_name: String, held: bool) -> void:
+	if not _from_owner() or _is_channeling() or health.silenced > 0.0:
 		return
 	var skill := Classes.skill(class_id, slot)
 	if skill.is_empty() or skill_cooldowns.get(slot, 0.0) > 0.0 or mana < skill.cost:
@@ -495,7 +622,7 @@ func request_skill(slot: String, aim_point_seen: Vector3, target_name: String) -
 	_set_cast_dir(_forward_to(aim_point_seen))
 	var target := _skill_target(target_name)
 	invisible = 0.0   # agir revela (o Véu em si mesmo volta a esconder)
-	if not _use_skill(skill, charge, aim_point_seen, target):
+	if not _use_skill(skill, charge, aim_point_seen, target, held):
 		_cast_dir = Vector3.ZERO
 		return
 	mana -= skill.cost
@@ -593,7 +720,7 @@ func _swing_weapon() -> void:
 			bonus = cls.backstab
 		var target_health = target.get_node_or_null("Health")
 		if target_health != null:
-			target_health.damage(weapon.damage * bonus * _might())
+			drain(target_health.damage(weapon.damage * bonus * _might()), [])
 		_push(target, _forward() * weapon.push)
 	invisible = 0.0
 	show_swing.rpc(-1, _forward(), weapon.range)
@@ -610,16 +737,19 @@ func _is_behind(target: Node3D, offset: Vector3) -> bool:
 # --- Skills (host) ----------------------------------------------------------
 # Cada uma devolve false se não deu para usar (aí não gasta mana nem recarga).
 
-func _use_skill(skill: Dictionary, charge: Array, point: Vector3, target: Node3D) -> bool:
+func _use_skill(skill: Dictionary, charge: Array, point: Vector3, target: Node3D, held := false) -> bool:
 	match skill.id:
 		"orb":
-			_fire_projectile(charge, skill.damage, skill.speed, "orb", 1.0)
+			_fire_projectile(charge, skill.damage, skill.speed, "orb", 1.0, skill.get("splash", 0.0))
 		"dagger":
 			_fire_projectile(charge, skill.damage, skill.speed, "dagger", cls.backstab)
-		"laser":
-			_start_laser(skill, charge)
+		"mini_meteor":
+			_mini_meteor(skill, charge, point)
 		"bless_curse", "veil_mark", "shout":
-			_support_skill(skill, charge, target)
+			if held:
+				_bubble(skill, charge)
+			else:
+				_support_skill(skill, charge, target)
 		"shadow_step":
 			return _shadow_step(skill, charge)
 		"whirl":
@@ -632,13 +762,29 @@ func _use_skill(skill: Dictionary, charge: Array, point: Vector3, target: Node3D
 
 
 # Dano direto da skill (só em quem pode ser ferido) + os elementos da carga.
-func _strike(target: Node, damage: float, charge: Array, scale := 1.0) -> void:
+# Devolve o dano causado; Sangue na carga (ou o bônus de roubo de vida) cura quem lançou.
+func _strike(target: Node, damage: float, charge: Array, scale := 1.0) -> float:
 	var target_health = target.get_node_or_null("Health")
 	if target_health == null:
-		return
+		return 0.0
+	var dealt := 0.0
 	if damage > 0.0 and Combat.can_harm(team, target):
-		target_health.damage(damage * cls.spell_power * _might() * scale)
-	_hit(target, charge, scale)
+		dealt += target_health.damage(damage * cls.spell_power * _might() * scale)
+	dealt += _hit(target, charge, scale)
+	drain(dealt, charge)
+	return dealt
+
+
+# Roubo de vida (host): 25% do dano por Sangue nos elementos + o bônus de roubo de vida.
+# Chamado também por projéteis, meteoros e zonas deste personagem.
+func drain(dealt: float, used_elements: Array) -> void:
+	if dealt <= 0.0 or health.dead or not multiplayer.is_server():
+		return
+	var fraction := BLOOD_STEAL * used_elements.count(E.Type.BLOOD)
+	if health.lifesteal > 0.0:
+		fraction += health.lifesteal_amount
+	if fraction > 0.0:
+		health.heal(dealt * fraction)
 
 
 func _is_enemy(node: Node) -> bool:
@@ -650,7 +796,13 @@ func _is_enemy(node: Node) -> bool:
 func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
 	if target != null and _is_enemy(target):
 		var target_health: Health = target.health
-		_hit(target, charge, 1.0)
+		var for_target := charge
+		if skill.id == "veil_mark":
+			# Assassino: Vida e Escudo no W são sempre para ele mesmo.
+			var own := charge.filter(func(element): return element == E.Type.LIFE or element == E.Type.SHIELD)
+			for_target = charge.filter(func(element): return not (element in own))
+			_self_elements(health, own)
+		_strike(target, 0.0, for_target)
 		if skill.has("slow"):
 			target_health.slow(skill.slow, skill.duration)
 		if skill.has("vulnerable"):
@@ -662,8 +814,10 @@ func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
 	if ally_health.dead:
 		ally_health.revive()
 	ally_health.heal(skill.get("heal", 0.0) * power)
-	if not charge.is_empty():
-		ally_health.set_ward(charge)
+	_self_elements(ally_health, charge)
+	var ward := charge.filter(func(element): return not (element in [E.Type.LIFE, E.Type.SHIELD, E.Type.BLOOD]))
+	if not ward.is_empty():
+		ally_health.set_ward(ward)
 	if skill.id == "veil_mark" and ally.get("invisible") != null:
 		ally.invisible = skill.invisible
 	if skill.id == "shout":
@@ -672,18 +826,100 @@ func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
 	show_flash.rpc(ally.global_position, 1.3, _look(charge, E.Type.LIFE))
 
 
-func _start_laser(skill: Dictionary, charge: Array) -> void:
-	channel_elements = charge
-	channel_shape = SpellResolver.Shape.BEAM
-	channel_time = 0.0
-	channel_limit = skill.duration
-	channel_dps = skill.dps
-	channel_range = skill.range
-	var look := charge if not charge.is_empty() else [E.Type.ARCANE]
-	fx_shape = SpellResolver.Shape.BEAM
-	fx_element = look[0]
-	fx_elements = look
-	fx_length = 0.0
+# Elementos do W em quem recebe (aliado ou o próprio): Vida cura, Escudo dá
+# barreira e Sangue dá roubo de vida.
+func _self_elements(target_health: Health, charge: Array) -> void:
+	var life := charge.count(E.Type.LIFE)
+	if life > 0:
+		target_health.heal(SELF_HEAL * life * power)
+	var shield := charge.count(E.Type.SHIELD)
+	if shield > 0:
+		target_health.add_barrier(SELF_BARRIER * shield * power, SELF_BARRIER_TIME)
+	var blood := charge.count(E.Type.BLOOD)
+	if blood > 0:
+		target_health.lifesteal_buff(LIFESTEAL_BUFF * blood, LIFESTEAL_TIME)
+
+
+# Mini meteoro (E do Mago): cai no cursor e deixa a zona dos elementos da carga.
+func _mini_meteor(skill: Dictionary, charge: Array, point: Vector3) -> void:
+	get_parent().spawn_entity({"type": "meteor", "team": team, "pos": _clamp_target(point, skill.range),
+		"mini": true, "elements": charge, "damage": skill.damage, "radius": skill.radius,
+		"zone_time": skill.zone_time, "caster": String(name), "strength": cls.spell_power * _might()})
+
+
+# Bolha de escudo (W do Mago segurado): barreira no Mago e nos aliados perto;
+# a carga dá um poder à bolha enquanto ela dura (ver _update_bubble).
+func _bubble(skill: Dictionary, charge: Array) -> void:
+	var duration: float = skill.bubble_time * (2.0 if E.Type.SHIELD in charge else 1.0)
+	var absorb: float = (skill.barrier + BUBBLE_EARTH_BONUS * charge.count(E.Type.EARTH)) * power
+	bubble_elements = charge.duplicate()
+	bubble_time = duration
+	_bubble_tick = 0.0
+	for ally in _bubble_units(skill.bubble_radius, true):
+		ally.health.add_barrier(absorb, duration)
+	show_flash.rpc(global_position, skill.bubble_radius, _look(charge, E.Type.SHIELD))
+
+
+# Unidades vivas dentro da bolha: aliadas (com o próprio Mago) ou hostis.
+func _bubble_units(radius: float, allies: bool) -> Array:
+	var result: Array = []
+	for node in get_tree().get_nodes_in_group("damageable"):
+		if node.is_queued_for_deletion() or node.is_in_group("structures") or node.health.dead:
+			continue
+		if node.global_position.distance_to(global_position) > radius:
+			continue
+		var ally: bool = node == self or Combat.team_of(node) == team
+		if ally == allies and (allies or Combat.is_hostile(team, Combat.team_of(node))):
+			result.append(node)
+	return result
+
+
+func _update_bubble(delta: float) -> void:
+	if bubble_time <= 0.0:
+		return
+	bubble_time = maxf(bubble_time - delta, 0.0)
+	if bubble_time <= 0.0:
+		bubble_elements = []
+		return
+	var radius: float = Classes.skill(class_id, "w").get("bubble_radius", 3.0)
+	# Projéteis inimigos que entram: Arcano reflete; Vazio e Escudo apagam.
+	var reflects := E.Type.ARCANE in bubble_elements
+	if reflects or E.Type.VOID in bubble_elements or E.Type.SHIELD in bubble_elements:
+		for projectile in get_tree().get_nodes_in_group("projectiles"):
+			if projectile.is_queued_for_deletion() or not Combat.is_hostile(team, projectile.team):
+				continue
+			var offset: Vector3 = projectile.global_position - global_position
+			offset.y = 0.0
+			if offset.length() > radius:
+				continue
+			if reflects:
+				projectile.reflect(team, String(name))
+			else:
+				projectile.queue_free()
+	_bubble_tick -= delta
+	if _bubble_tick > 0.0:
+		return
+	_bubble_tick = BUBBLE_TICK
+	for ally in _bubble_units(radius, true):
+		if E.Type.LIFE in bubble_elements:
+			ally.health.heal(BUBBLE_HEAL * bubble_elements.count(E.Type.LIFE) * BUBBLE_TICK * power)
+		if E.Type.WATER in bubble_elements:
+			ally.health.burning = 0.0
+			ally.health.blinded = 0.0
+			ally.health.bleeding = 0.0
+		if E.Type.SMOKE in bubble_elements and ally.get("invisible") != null:
+			ally.invisible = maxf(ally.invisible, BUBBLE_TICK + 0.3)
+		if E.Type.BLOOD in bubble_elements:
+			ally.health.lifesteal_buff(LIFESTEAL_BUFF * bubble_elements.count(E.Type.BLOOD), BUBBLE_TICK + 0.3)
+	var offensive := bubble_elements.filter(func(element): return not (element in BUBBLE_SPECIAL))
+	for enemy in _bubble_units(radius, false):
+		if not offensive.is_empty():
+			_strike(enemy, 0.0, offensive, BUBBLE_STRENGTH)
+		if E.Type.GRAVITY in bubble_elements:
+			var away: Vector3 = enemy.global_position - global_position
+			away.y = 0.0
+			if away.length() > 0.01:
+				_push(enemy, away.normalized() * BUBBLE_PUSH)
 
 
 # Salta até `distance` m para o mouse (ou o mais longe que estiver livre) e
@@ -761,6 +997,7 @@ func _update_host(delta: float) -> void:
 	weapon_timer = maxf(weapon_timer - delta, 0.0)
 	invisible = maxf(invisible - delta, 0.0)
 	_update_mana(delta)
+	_update_bubble(delta)
 	_update_dash_hits(delta)
 	_update_cooldowns(delta)
 	_update_storm(delta)
@@ -819,7 +1056,7 @@ func _cancel_channel() -> void:
 	_cast_dir = Vector3.ZERO
 
 
-func _fire_projectile(charge: Array, damage: float, speed: float, style: String, backstab: float) -> void:
+func _fire_projectile(charge: Array, damage: float, speed: float, style: String, backstab: float, splash := 0.0) -> void:
 	get_parent().spawn_entity({
 		"type": "projectile",
 		"pos": global_position + Vector3.UP,
@@ -832,25 +1069,27 @@ func _fire_projectile(charge: Array, damage: float, speed: float, style: String,
 		"damage": damage,
 		"style": style,
 		"backstab": backstab,
+		"splash": splash,
 	})
 
 
 # --- Ultimates (host) --------------------------------------------------------
-# O elemento dominante da carga decide qual sai (ultimates.gd); os outros
-# elementos vão junto como reforço. `scale`: força do ultimate na classe.
+# Voláteis (ultimates.gd): 3 elementos iguais = versão MEGA; senão, o elemento
+# dominante decide qual sai, os outros vão junto como reforço e cada um deixa a
+# sua zona no local. `scale`: força do ultimate na classe.
 
 func _cast_ultimate(id: String, charge: Array, point: Vector3, scale: float) -> bool:
 	var extra := charge.filter(func(element): return element != Ultimates.dominant(charge))
+	var zones := Ultimates.zone_elements(charge)
 	var strength := scale * _might()
+	var center := global_position
 	match id:
 		"meteor":
-			get_parent().spawn_entity({"type": "meteor", "team": team, "pos": _clamp_target(point, METEOR_RANGE),
-				"extra": extra, "strength": strength})
+			center = _clamp_target(point, METEOR_RANGE)
+			_spawn_meteor(center, strength, extra, zones)
+			zones = []   # o meteoro deixa as zonas quando cai
 		"storm":
-			storm_time = STORM_TIME
-			storm_tick = 0.0
-			storm_elements = [E.Type.LIGHTNING, E.Type.LIGHTNING] + extra
-			storm_scale = strength
+			_start_storm(STORM_TIME, STORM_INTERVAL, 0, [E.Type.LIGHTNING, E.Type.LIGHTNING] + extra, strength)
 		"frost":
 			for enemy in _hostile_units(FROST_RADIUS):
 				enemy.health.freeze(FROST_TIME)
@@ -872,19 +1111,11 @@ func _cast_ultimate(id: String, charge: Array, point: Vector3, scale: float) -> 
 			show_flash.rpc(global_position, QUAKE_RADIUS, E.Type.EARTH)
 		"cataclysm":
 			var at := _clamp_target(point, CATACLYSM_RANGE)
+			center = at
 			show_flash.rpc(at, CATACLYSM_RADIUS * 0.5, E.Type.ARCANE)
 			get_tree().create_timer(CATACLYSM_DELAY).timeout.connect(_cataclysm.bind(at, extra, scale))
 		"tide":
-			for target in _damageables():
-				var offset: Vector3 = target.global_position - global_position
-				offset.y = 0.0
-				if offset.length() < 0.01 or offset.length() > TIDE_RANGE \
-						or _forward().angle_to(offset.normalized()) > TIDE_ANGLE:
-					continue
-				_strike(target, 0.0, [E.Type.WATER, E.Type.WATER] + extra, scale)
-				_push(target, offset.normalized() * TIDE_PUSH)
-			for step in 3:
-				show_flash.rpc(global_position + _forward() * (2.0 + 3.0 * step), 2.0 + step, E.Type.WATER)
+			_wave(TIDE_RANGE, TIDE_ANGLE, 0.0, TIDE_PUSH, [E.Type.WATER, E.Type.WATER] + extra, scale, 3)
 		"fortress":
 			for i in 8:
 				var angle := TAU * i / 8.0
@@ -898,7 +1129,8 @@ func _cast_ultimate(id: String, charge: Array, point: Vector3, scale: float) -> 
 				_strike(enemy, ECLIPSE_DAMAGE, [E.Type.VOID, E.Type.VOID] + extra, scale)
 			show_flash.rpc(global_position, ECLIPSE_RADIUS, E.Type.VOID)
 		"singularity":
-			_singularity(_clamp_target(point, SINGULARITY_RANGE), extra, scale)
+			center = _clamp_target(point, SINGULARITY_RANGE)
+			_singularity(center, extra, scale)
 		"smokescreen":
 			for enemy in _hostile_units(SMOKESCREEN_RADIUS):
 				_hit(enemy, [E.Type.SMOKE] + extra, scale)
@@ -906,9 +1138,170 @@ func _cast_ultimate(id: String, charge: Array, point: Vector3, scale: float) -> 
 				if Combat.team_of(player) == team and not player.health.dead 						and player.global_position.distance_to(global_position) <= SMOKESCREEN_RADIUS:
 					player.invisible = maxf(player.invisible, SMOKESCREEN_HIDE)
 			show_flash.rpc(global_position, SMOKESCREEN_RADIUS, E.Type.SMOKE)
+		"blood_moon":
+			_blood_burst(BLOOD_MOON_RADIUS, BLOOD_MOON_DAMAGE, Health.BLEED_TIME, 0.5, extra, scale)
+		_:
+			if not _cast_mega(id, point, scale, strength):
+				return false
+	if not zones.is_empty():
+		_spawn_zone(center, zones, ZONE_RADIUS, ZONE_TIME, strength)
+	return true
+
+
+# Versões MEGA (3 elementos iguais).
+func _cast_mega(id: String, point: Vector3, scale: float, strength: float) -> bool:
+	match id:
+		"mega_fire":
+			# Chuva de meteoros: um no cursor e os outros espalhados em volta, um depois do outro.
+			var at := _clamp_target(point, METEOR_RANGE)
+			for i in RAIN_METEORS:
+				var spot := at
+				if i > 0:
+					var angle := TAU * i / float(RAIN_METEORS - 1) + randf_range(-0.4, 0.4)
+					spot = _clamp_target(at + Vector3(cos(angle), 0.0, sin(angle)) * randf_range(2.5, RAIN_SPREAD),
+						METEOR_RANGE + RAIN_SPREAD)
+				get_tree().create_timer(RAIN_DELAY * i).timeout.connect(_spawn_meteor.bind(spot, strength * 0.8, [], []))
+		"mega_lightning":
+			_start_storm(MEGA_STORM_TIME, MEGA_STORM_INTERVAL, MEGA_STORM_CHAIN,
+				[E.Type.LIGHTNING, E.Type.LIGHTNING, E.Type.LIGHTNING], strength)
+		"mega_cold":
+			for enemy in _hostile_units(ICE_AGE_RADIUS):
+				enemy.health.freeze(ICE_AGE_FREEZE)
+				_hit(enemy, [E.Type.COLD], scale)
+			_spawn_zone(global_position, [E.Type.COLD, E.Type.COLD, E.Type.COLD], ICE_AGE_RADIUS * 0.7, ICE_AGE_FREEZE + 1.0, strength)
+			show_flash.rpc(global_position, ICE_AGE_RADIUS, E.Type.COLD)
+		"mega_life":
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) != team:
+					continue
+				player.health.revive()
+				player.health.heal(player.health.max_hp)
+				player.health.haste(0.3, 4.0)
+				show_flash.rpc(player.global_position, 2.0, E.Type.LIFE)
+		"mega_earth":
+			_fissure(scale)
+		"mega_arcane":
+			show_flash.rpc(global_position, SUPERNOVA_RADIUS * 0.3, E.Type.ARCANE)
+			get_tree().create_timer(SUPERNOVA_DELAY).timeout.connect(_supernova.bind(scale))
+		"mega_water":
+			_wave(TSUNAMI_RANGE, TSUNAMI_ANGLE, TSUNAMI_DAMAGE, MAX_PUSH,
+				[E.Type.WATER, E.Type.WATER, E.Type.WATER], scale, 5)
+		"mega_shield":
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) == team and not player.health.dead \
+						and player.global_position.distance_to(global_position) <= BASTION_RADIUS:
+					player.health.add_barrier(Health.INVULNERABLE_BARRIER, BASTION_TIME)
+					player.health.shielded = maxf(player.health.shielded, BASTION_TIME)
+			show_flash.rpc(global_position, BASTION_RADIUS, E.Type.SHIELD)
+		"mega_void":
+			for enemy in _hostile_units(BLACKOUT_RADIUS):
+				_strike(enemy, ECLIPSE_DAMAGE, [E.Type.VOID], scale)
+				enemy.health.silence(BLACKOUT_TIME)
+				if enemy.get("mana") != null:
+					enemy.mana = 0.0
+			show_flash.rpc(global_position, BLACKOUT_RADIUS, E.Type.VOID)
+		"mega_gravity":
+			var at := _clamp_target(point, SINGULARITY_RANGE)
+			_spawn_zone(at, [E.Type.GRAVITY, E.Type.GRAVITY, E.Type.GRAVITY], BLACK_HOLE_RADIUS, BLACK_HOLE_TIME,
+				strength, BLACK_HOLE_DPS)
+			show_flash.rpc(at, BLACK_HOLE_RADIUS, E.Type.GRAVITY)
+		"mega_smoke":
+			# Mega fumaça: cega os inimigos e apaga a visão deles (tela escura); o time some na nuvem.
+			for enemy in _hostile_units(MEGA_SMOKE_RADIUS):
+				_hit(enemy, [E.Type.SMOKE], scale)
+				enemy.health.blinded = maxf(enemy.health.blinded, BLACKOUT_TIME)
+				enemy.health.blackout = maxf(enemy.health.blackout, BLACKOUT_TIME)
+			_spawn_zone(global_position, [E.Type.SMOKE, E.Type.SMOKE, E.Type.SMOKE], MEGA_SMOKE_RADIUS, BLACKOUT_TIME, strength)
+			show_flash.rpc(global_position, MEGA_SMOKE_RADIUS, E.Type.SMOKE)
+		"mega_blood":
+			_blood_burst(FEAST_RADIUS, FEAST_DAMAGE, FEAST_BLEED, 1.0, [], scale)
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) == team and not player.health.dead \
+						and player.global_position.distance_to(global_position) <= FEAST_RADIUS:
+					player.health.lifesteal_buff(FEAST_TEAM_STEAL, LIFESTEAL_TIME)
 		_:
 			return false
 	return true
+
+
+func _spawn_meteor(at: Vector3, strength: float, extra: Array, zones: Array) -> void:
+	if not is_inside_tree():
+		return
+	get_parent().spawn_entity({"type": "meteor", "team": team, "pos": at, "extra": extra,
+		"strength": strength, "caster": String(name), "zone_elements": zones})
+
+
+func _spawn_zone(at: Vector3, zone_elements: Array, radius: float, duration: float, strength: float, dps := 0.0) -> void:
+	get_parent().spawn_entity({"type": "zone", "pos": Vector3(at.x, 0.0, at.z), "team": team,
+		"caster": String(name), "elements": zone_elements, "strength": strength,
+		"radius": radius, "duration": duration, "dps": dps})
+
+
+func _start_storm(duration: float, interval: float, chain: int, bolt_elements: Array, strength: float) -> void:
+	storm_time = duration
+	storm_tick = 0.0
+	storm_interval = interval
+	storm_chain = chain
+	storm_elements = bolt_elements
+	storm_scale = strength
+
+
+# Lua de sangue / Banquete: inimigos perto levam dano e sangram; quem lançou
+# cura `steal` do dano causado (além do roubo de vida normal).
+func _blood_burst(radius: float, damage: float, bleed_time: float, steal: float, extra: Array, scale: float) -> void:
+	var dealt := 0.0
+	for enemy in _hostile_units(radius):
+		dealt += _strike(enemy, damage, extra, scale)
+		enemy.health.bleed(bleed_time)
+	health.heal(dealt * steal)
+	show_flash.rpc(global_position, radius, E.Type.BLOOD)
+
+
+# Onda à frente (Maremoto/Tsunami): molha, causa dano e empurra.
+func _wave(reach: float, angle: float, damage: float, push_force: float, wave_elements: Array, scale: float, steps: int) -> void:
+	for target in _damageables():
+		var offset: Vector3 = target.global_position - global_position
+		offset.y = 0.0
+		if offset.length() < 0.01 or offset.length() > reach or _forward().angle_to(offset.normalized()) > angle:
+			continue
+		_strike(target, damage, wave_elements, scale)
+		_push(target, offset.normalized() * push_force)
+	for step in steps:
+		show_flash.rpc(global_position + _forward() * (2.0 + reach / steps * step), 2.0 + step, E.Type.WATER)
+
+
+# Fenda: rachadura em linha à frente que fere e atordoa, com paredes de pedra dos lados.
+func _fissure(scale: float) -> void:
+	var direction := _forward()
+	for enemy in _hostile_units(FISSURE_LENGTH + 1.0):
+		var offset: Vector3 = enemy.global_position - global_position
+		offset.y = 0.0
+		var along := offset.dot(direction)
+		if along < 0.0 or along > FISSURE_LENGTH or (offset - direction * along).length() > FISSURE_WIDTH:
+			continue
+		_strike(enemy, FISSURE_DAMAGE, [], scale)
+		enemy.health.stun(FISSURE_STUN)
+	var side := direction.cross(Vector3.UP).normalized()
+	var yaw := atan2(direction.x, direction.z) + PI / 2.0
+	for i in 4:
+		var at := global_position + direction * (2.0 + 4.0 * i)
+		show_flash.rpc(at, FISSURE_WIDTH, E.Type.EARTH)
+		if i > 0:
+			_spawn_barrier(at + side * (FISSURE_WIDTH + 1.0), [E.Type.SHIELD, E.Type.EARTH], yaw)
+			_spawn_barrier(at - side * (FISSURE_WIDTH + 1.0), [E.Type.SHIELD, E.Type.EARTH], yaw)
+
+
+# Supernova (depois da carga): explosão enorme em volta de quem lançou.
+func _supernova(scale: float) -> void:
+	if not is_inside_tree() or health.dead:
+		return
+	for enemy in _hostile_units(SUPERNOVA_RADIUS):
+		_strike(enemy, SUPERNOVA_DAMAGE, [], scale)
+		var away: Vector3 = enemy.global_position - global_position
+		away.y = 0.0
+		if away.length() > 0.01:
+			_push(enemy, away.normalized() * MAX_PUSH)
+	show_flash.rpc(global_position, SUPERNOVA_RADIUS, E.Type.ARCANE)
 
 
 # Singularidade: suga os inimigos perto de `at` para o centro, causa dano e atordoa.
@@ -948,13 +1341,21 @@ func _update_storm(delta: float) -> void:
 	storm_tick -= delta
 	if storm_tick > 0.0:
 		return
-	storm_tick = STORM_INTERVAL
+	storm_tick = storm_interval
 	var targets := _hostile_units(STORM_RANGE)
 	if targets.is_empty():
 		return
 	var target: Node3D = targets.pick_random()
-	target.health.apply_elements(storm_elements, storm_scale)
+	drain(target.health.apply_elements(storm_elements, storm_scale), storm_elements)
 	show_bolt.rpc(target.global_position)
+	# Tempestade suprema: o raio salta para os inimigos mais perto do primeiro.
+	if storm_chain > 0:
+		targets.erase(target)
+		targets.sort_custom(func(a, b): return a.global_position.distance_to(target.global_position) \
+			< b.global_position.distance_to(target.global_position))
+		for other in targets.slice(0, storm_chain):
+			drain(other.health.apply_elements(storm_elements, storm_scale * 0.6), storm_elements)
+			show_bolt.rpc(other.global_position)
 
 
 # Ponto no chão a no máximo `max_range` do personagem, dentro do mapa.
@@ -1073,13 +1474,14 @@ func _hostile_units(radius: float) -> Array:
 
 
 # Elementos da carga num alvo: a força depende da classe (aliados só recebem Vida).
-func _hit(target: Node, elements: Array, scale: float) -> void:
+func _hit(target: Node, elements: Array, scale: float) -> float:
 	var target_health := target.get_node_or_null("Health")
 	if target_health == null:
-		return
+		return 0.0
+	var dealt := 0.0
 	elements = Combat.filter_elements(team, target, elements)
 	if not elements.is_empty():
-		target_health.apply_elements(elements, scale * cls.spell_power * _might())
+		dealt = target_health.apply_elements(elements, scale * cls.spell_power * _might())
 	# Gravidade puxa o alvo para quem lançou (no laser, por segundo).
 	var gravity := elements.count(E.Type.GRAVITY)
 	if gravity > 0 and target != self and target is Node3D:
@@ -1087,6 +1489,7 @@ func _hit(target: Node, elements: Array, scale: float) -> void:
 		toward.y = 0.0
 		if toward.length() > 1.2:
 			_push(target, toward.normalized() * GRAVITY_PULL * gravity * minf(scale, 1.0))
+	return dealt
 
 
 # Força de dano: nível/itens/bônus, pela metade se o personagem estiver cego (Fumaça).
@@ -1105,13 +1508,13 @@ func _raycast(from: Vector3, to: Vector3) -> Dictionary:
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 
-func _spawn_barrier(at: Vector3, elements: Array) -> void:
+func _spawn_barrier(at: Vector3, elements: Array, yaw := NAN) -> void:
 	_act("Spellcast_Raise")
 	var offset := at - global_position
 	get_parent().spawn_entity({
 		"type": "barrier",
 		"pos": Vector3(at.x, 0.0, at.z),
-		"yaw": atan2(offset.x, offset.z),
+		"yaw": atan2(offset.x, offset.z) if is_nan(yaw) else yaw,
 		"elements": elements,
 		"team": team,
 	})
@@ -1209,3 +1612,5 @@ func _on_died() -> void:
 	storm_time = 0.0
 	invisible = 0.0
 	dash_hit_time = 0.0
+	bubble_time = 0.0
+	bubble_elements = []
