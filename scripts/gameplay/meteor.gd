@@ -4,6 +4,7 @@
 extends Node3D
 
 const E = preload("res://scripts/core/elements.gd")
+const Combat = preload("res://scripts/core/combat.gd")
 
 const FALL_TIME := 1.0
 const START_HEIGHT := 14.0
@@ -12,6 +13,7 @@ const ELEMENTS := [E.Type.FIRE, E.Type.FIRE, E.Type.EARTH, E.Type.EARTH]
 const PUSH := 9.0
 const LINGER := 0.4
 
+var team := Combat.NEUTRAL
 var age := 0.0
 var exploded := false
 var rock: MeshInstance3D
@@ -57,7 +59,7 @@ func _explode() -> void:
 	for node in get_tree().get_nodes_in_group("damageable"):
 		var offset: Vector3 = node.global_position - global_position
 		offset.y = 0.0
-		if offset.length() > RADIUS:
+		if offset.length() > RADIUS or not Combat.can_harm(team, node):
 			continue
 		node.get_node("Health").apply_elements(ELEMENTS, 1.0)
 		if node.has_method("push") and offset.length() > 0.01:

@@ -9,6 +9,9 @@ const Health = preload("res://scripts/core/health.gd")
 const Keybinds = preload("res://scripts/ui/keybinds.gd")
 const Specials = preload("res://scripts/core/specials.gd")
 const Classes = preload("res://scripts/core/classes.gd")
+const Combat = preload("res://scripts/core/combat.gd")
+const Progression = preload("res://scripts/moba/progression.gd")
+const MobaMap = preload("res://scripts/moba/moba_map.gd")
 
 var checks := 0
 var failures := 0
@@ -22,6 +25,7 @@ func _init() -> void:
 	_test_specials()
 	_test_keybinds()
 	_test_classes()
+	_test_moba()
 	print("%d verificações, %d falhas" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -207,3 +211,49 @@ func _test_classes() -> void:
 	health.damage(40.0)
 	check(is_equal_approx(health.hp, 55.0), "armadura e escudo se somam")
 	health.free()
+
+
+class Unit extends RefCounted:
+	var team: int
+	func _init(p_team: int) -> void:
+		team = p_team
+
+
+func _test_moba() -> void:
+	var T = E.Type
+	# Times: no MOBA aliados só recebem a Vida.
+	var ally := Unit.new(Combat.BLUE)
+	var enemy := Unit.new(Combat.RED)
+	Combat.friendly_fire = false
+	check(Combat.filter_elements(Combat.BLUE, ally, [T.FIRE, T.LIFE]) == [T.LIFE], "MOBA: aliado só recebe a Vida")
+	check(Combat.filter_elements(Combat.BLUE, enemy, [T.FIRE, T.LIFE]) == [T.FIRE, T.LIFE], "MOBA: inimigo recebe tudo")
+	check(not Combat.can_harm(Combat.BLUE, ally) and Combat.can_harm(Combat.BLUE, enemy), "MOBA: sem fogo amigo")
+	Combat.friendly_fire = true
+	check(Combat.can_harm(Combat.BLUE, ally), "Arena: fogo amigo ligado")
+
+	# Níveis e atributos.
+	check(Progression.apply_xp(1, 0, Progression.xp_to_next(1)) == [2, 0], "xp suficiente sobe de nível")
+	check(Progression.apply_xp(Progression.MAX_LEVEL, 0, 99999)[0] == Progression.MAX_LEVEL, "nível máximo")
+	var mage := Classes.info("mage")
+	var base := Progression.stats(mage, 1, [], {})
+	check(is_equal_approx(base.max_hp, 200.0) and is_equal_approx(base.power, 1.0), "nível 1 = atributos da classe")
+	var strong := Progression.stats(mage, 3, ["amuleto", "foco"], {"golem": 10.0})
+	check(is_equal_approx(strong.max_hp, 200.0 * 1.16 + 90.0), "vida: nível + Amuleto")
+	check(is_equal_approx(strong.power, 1.12 * (1.0 + 0.12 + 0.2)), "dano: nível x (Foco + Fúria do Golem)")
+	check(Progression.cannot_buy("amuleto", 100, [], true) == "ouro insuficiente", "loja: sem ouro")
+	check(Progression.cannot_buy("amuleto", 999, [], false) != "", "loja: só na fonte")
+	check(Progression.cannot_buy("amuleto", 999, [], true) == "", "loja: pode comprar")
+
+	# Mapa: 16 estruturas, dependências válidas e acampamentos espelhados.
+	var structures := MobaMap.structures()
+	var ids := structures.map(func(s): return s.id)
+	var valid := true
+	for s in structures:
+		for required in s.requires:
+			valid = valid and required in ids
+	check(structures.size() == 16 and valid, "mapa: 16 estruturas com dependências válidas")
+	var camps := MobaMap.camps()
+	check(camps.size() == 5 and camps[0].pos == -camps[1].pos, "mapa: 4 acampamentos espelhados + Guardião")
+	var blue_path := MobaMap.lane_path(Combat.BLUE, "norte")
+	var red_path := MobaMap.lane_path(Combat.RED, "norte")
+	check(blue_path[0].x < 0 and red_path[0].x > 0 and blue_path.back().x > 0, "rotas vão de uma base à outra")

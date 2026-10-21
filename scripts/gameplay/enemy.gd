@@ -1,16 +1,21 @@
-# Inimigo controlado pelo host: escolhe o mago vivo mais próximo, anda até ele
-# pelo navmesh e ataca corpo a corpo ou à distância. Os outros peers só exibem.
+# Inimigo controlado pelo host. Os outros peers só exibem.
+# - Arena: escolhe o jogador vivo mais próximo, anda até ele pelo navmesh e ataca.
+# - Selva do MOBA (time neutro): fica no acampamento; só ataca quando leva dano,
+#   persegue quem estiver perto e, se for longe demais, volta e se cura.
 extends CharacterBody3D
 
 const E = preload("res://scripts/core/elements.gd")
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
+const Combat = preload("res://scripts/core/combat.gd")
 
 const GRAVITY := 20.0
 const RETARGET_TIME := 0.5
 const REPATH_TIME := 0.25
 const PUSH_DECAY := 18.0
 const MAX_PUSH := 12.0
+const LEASH_RANGE := 14.0      # selva: distância máxima do acampamento
+const JUNGLE_AGGRO := 10.0     # selva: alcance para escolher quem atacar
 
 # Todos os números são nossos e podem ser ajustados livremente.
 const KINDS := {
@@ -33,9 +38,29 @@ const KINDS := {
 		"range": 2.2, "cooldown": 2.0, "damage": 40.0, "elements": [], "resist": {E.Type.EARTH: 0.5},
 		"push_scale": 0.3,
 	},
+	# Selva do MOBA.
+	"jungle_wolf": {
+		"label": "Lobo", "hp": 320.0, "speed": 3.8, "scale": 0.9, "color": Color(0.5, 0.5, 0.55),
+		"range": 1.6, "cooldown": 1.0, "damage": 18.0, "elements": [], "resist": {},
+		"gold": 35, "xp": 40,
+	},
+	"jungle_golem": {
+		"label": "Golem", "hp": 950.0, "speed": 2.3, "scale": 1.5, "color": Color(0.45, 0.4, 0.35),
+		"range": 2.2, "cooldown": 1.6, "damage": 45.0, "elements": [], "resist": {E.Type.EARTH: 0.5},
+		"push_scale": 0.4, "gold": 90, "xp": 110,
+	},
+	"boss": {
+		"label": "Guardião", "hp": 3200.0, "speed": 2.0, "scale": 2.3, "color": Color(0.3, 0.6, 0.5),
+		"range": 3.0, "cooldown": 1.8, "damage": 70.0, "elements": [E.Type.EARTH], "resist": {},
+		"push_scale": 0.1, "gold": 250, "xp": 300,
+	},
 }
 
 var kind := "grunt"
+var team := Combat.RED            # Arena: o time contrário aos jogadores; selva: NEUTRAL
+var camp_position := Vector3.ZERO
+var aggressive := false           # selva: provocado
+var returning := false            # selva: voltando ao acampamento
 var info: Dictionary
 var health: Health
 var label: Label3D
@@ -93,6 +118,7 @@ func _ready() -> void:
 
 	if multiplayer.is_server():
 		health.died.connect(queue_free)
+		health.damaged.connect(_on_damaged)
 		agent = NavigationAgent3D.new()
 		agent.radius = capsule.radius
 		# O navmesh fica 0,5 m acima da origem do inimigo (que está no chão).
@@ -111,6 +137,16 @@ func _process(_delta: float) -> void:
 	label.text = "%s %d\n%s" % [info.label, ceili(health.hp), health.status_text()]
 
 
+func is_neutral() -> bool:
+	return team == Combat.NEUTRAL
+
+
+# Selva: levar dano provoca o monstro (se ele não estiver voltando para casa).
+func _on_damaged(_amount: float) -> void:
+	if is_neutral() and not returning:
+		aggressive = true
+
+
 func _physics_process(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
@@ -118,11 +154,13 @@ func _physics_process(delta: float) -> void:
 	_retarget_timer -= delta
 	if _retarget_timer <= 0.0 or not _is_valid_target(target):
 		_retarget_timer = RETARGET_TIME
-		target = _nearest_player()
+		target = _jungle_target() if is_neutral() else _nearest_player()
 
 	var direction := Vector3.ZERO
 	var frozen := health.frozen > 0.0
-	if target != null and not frozen:
+	if is_neutral() and (returning or target == null) and not frozen:
+		direction = _return_to_camp()
+	elif target != null and not frozen:
 		var offset := target.global_position - global_position
 		offset.y = 0.0
 		var distance := offset.length()
@@ -180,6 +218,7 @@ func _attack() -> void:
 			"dir": forward,
 			"elements": info.projectile,
 			"caster": String(name),
+			"team": team,
 		})
 		return
 	var target_health: Health = target.get_node("Health")
@@ -202,6 +241,51 @@ func _nearest_player() -> Node3D:
 	return best
 
 
-# Ignora magos caídos e o Assassino invisível.
+# Ignora caídos e o Assassino invisível.
 func _is_valid_target(node) -> bool:
-	return is_instance_valid(node) and not node.is_queued_for_deletion() and not node.health.dead and node.invisible <= 0.0
+	if not is_instance_valid(node) or node.is_queued_for_deletion() or node.health.dead:
+		return false
+	if node.get("invisible") != null and node.invisible > 0.0:
+		return false
+	if is_neutral():
+		# Selva: não sai de perto do acampamento.
+		return aggressive and not returning and node.global_position.distance_to(camp_position) <= LEASH_RANGE
+	return true
+
+
+# Selva: o campeão ou tropa mais próximo (provocou o acampamento); longe demais, volta.
+func _jungle_target() -> Node3D:
+	if not aggressive or returning:
+		return null
+	if global_position.distance_to(camp_position) > LEASH_RANGE:
+		returning = true
+		return null
+	var best: Node3D = null
+	var best_distance := JUNGLE_AGGRO
+	for node in get_tree().get_nodes_in_group("damageable"):
+		if node == self or node.is_in_group("structures") or Combat.team_of(node) == Combat.NEUTRAL:
+			continue
+		if not _is_valid_target(node):
+			continue
+		var distance := global_position.distance_to(node.global_position)
+		if distance < best_distance:
+			best_distance = distance
+			best = node
+	if best == null:
+		returning = true
+	return best
+
+
+# Volta ao acampamento; ao chegar, se cura e para de lutar.
+func _return_to_camp() -> Vector3:
+	var to_camp := camp_position - global_position
+	to_camp.y = 0.0
+	if to_camp.length() < 1.0:
+		if returning:
+			returning = false
+			aggressive = false
+			health.reset()
+		return Vector3.ZERO
+	if not returning and not aggressive:
+		return Vector3.ZERO
+	return to_camp.normalized()

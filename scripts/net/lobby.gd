@@ -1,8 +1,9 @@
 # Tela inicial: hospedar, jogar sozinho, entrar em partida encontrada ou por IP.
-# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N | --class=ID
+# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N | --class=ID | --mode=arena|moba
 extends Control
 
 const Classes = preload("res://scripts/core/classes.gd")
+const Combat = preload("res://scripts/core/combat.gd")
 
 enum State { MENU, HOSTING, CONNECTING, CONNECTED }
 
@@ -16,6 +17,10 @@ var start_button: Button
 var status_label: Label
 var class_buttons := {}   # id da classe -> Button
 var class_description: Label
+var mode_buttons := {}    # id do modo -> Button
+var team_row: HBoxContainer
+var team_buttons := {}    # time -> Button
+var bots_check: CheckBox
 
 var _games_signature := "?"
 var _games_timer := 0.0
@@ -50,7 +55,7 @@ func _build_ui() -> void:
 	column.add_theme_constant_override("separation", 12)
 	center.add_child(column)
 
-	var title := _label(column, "Elementistas", 48)
+	var title := _label(column, "Elementistas", 40)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	# Escolha de classe: vale em qualquer estado do lobby.
@@ -67,6 +72,30 @@ func _build_ui() -> void:
 	class_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	class_description.custom_minimum_size.x = 480
 	_refresh_class()
+
+	# Modo de jogo (o host escolhe) e, no MOBA, time e bots.
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 8)
+	column.add_child(mode_row)
+	_label(mode_row, "Modo:", 18)
+	for id in Network.MODES:
+		var button := _button(mode_row, Network.MODES[id], _on_mode_pressed.bind(id))
+		button.toggle_mode = true
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mode_buttons[id] = button
+	team_row = HBoxContainer.new()
+	team_row.add_theme_constant_override("separation", 8)
+	column.add_child(team_row)
+	_label(team_row, "Time:", 18)
+	for team in [Combat.BLUE, Combat.RED]:
+		var button := _button(team_row, Combat.TEAM_NAMES[team], _on_team_pressed.bind(team))
+		button.toggle_mode = true
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		team_buttons[team] = button
+	bots_check = CheckBox.new()
+	bots_check.text = "Completar os times com bots (3v3)"
+	bots_check.toggled.connect(func(on): Network.set_setting("bots", on))
+	column.add_child(bots_check)
 
 	menu_box = VBoxContainer.new()
 	menu_box.add_theme_constant_override("separation", 8)
@@ -132,15 +161,47 @@ func _refresh_class() -> void:
 	class_description.text = Classes.info(Network.my_class).description
 
 
-# "Host: Mago", "Jogador 2 (você): Lutador"...
+func _on_mode_pressed(id: String) -> void:
+	Network.set_setting("mode", id)
+	_refresh()
+
+
+func _on_team_pressed(team: int) -> void:
+	Network.set_my_team(team)
+	_refresh()
+
+
+# Modo, time e bots: o host (ou o menu, antes de hospedar) escolhe; os outros só veem.
+func _refresh_options() -> void:
+	var can_edit := state == State.MENU or state == State.HOSTING
+	var moba := Network.game_mode() == "moba"
+	for id in mode_buttons:
+		mode_buttons[id].set_pressed_no_signal(id == Network.game_mode())
+		mode_buttons[id].disabled = not can_edit
+	team_row.visible = moba and (state == State.HOSTING or state == State.CONNECTED)
+	var my_team := Network.team_of(multiplayer.get_unique_id())
+	for team in team_buttons:
+		team_buttons[team].set_pressed_no_signal(team == my_team)
+	bots_check.visible = moba
+	bots_check.disabled = not can_edit
+	bots_check.set_pressed_no_signal(Network.settings.get("bots", true))
+
+
+# "Host: Mago", "Jogador 2 (você): Lutador"... (no MOBA, com o time)
 func _players_text() -> String:
 	var names := PackedStringArray()
+	var moba := Network.game_mode() == "moba"
 	for i in Network.players.size():
 		var peer: int = Network.players[i]
 		var who := "Host" if peer == 1 else "Jogador %d" % (i + 1)
 		if peer == multiplayer.get_unique_id():
 			who += " (você)"
-		names.append("%s: %s" % [who, Classes.info(Network.class_of(peer)).label])
+		var line := "%s: %s" % [who, Classes.info(Network.class_of(peer)).label]
+		if moba:
+			line += " — time %s" % Combat.TEAM_NAMES[Network.team_of(peer)]
+		names.append(line)
+	if moba and Network.settings.get("bots", true):
+		names.append("+ %d bot(s) para completar os times" % Network.bot_plan().size())
 	return "\n".join(names)
 
 
@@ -154,6 +215,7 @@ func _set_state(new_state: State) -> void:
 
 
 func _refresh() -> void:
+	_refresh_options()
 	if state == State.HOSTING:
 		var lines := PackedStringArray(["Partida aberta! Seus amigos já devem vê-la na tela deles.", ""])
 		for entry in Network.lan_addresses():
@@ -167,8 +229,8 @@ func _refresh() -> void:
 	elif state == State.CONNECTING:
 		wait_label.text = "Conectando..."
 	elif state == State.CONNECTED:
-		wait_label.text = "Conectado! Jogadores: %d/%d\n%s\nAguardando o host começar a partida..." % [
-			Network.players.size(), Network.MAX_PLAYERS, _players_text()]
+		wait_label.text = "Conectado! Modo: %s\nJogadores: %d/%d\n%s\nAguardando o host começar a partida..." % [
+			Network.MODES[Network.game_mode()], Network.players.size(), Network.MAX_PLAYERS, _players_text()]
 
 
 func _on_host_pressed() -> void:
@@ -223,6 +285,9 @@ func _parse_command_line() -> void:
 		elif arg.begins_with("--class="):
 			Network.set_my_class(arg.get_slice("=", 1))
 			_refresh_class()
+		elif arg.begins_with("--mode="):
+			Network.set_setting("mode", arg.get_slice("=", 1))
+			_refresh()
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--host":
 			_on_host_pressed()

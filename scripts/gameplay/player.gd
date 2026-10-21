@@ -9,6 +9,10 @@ const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Specials = preload("res://scripts/core/specials.gd")
 const Classes = preload("res://scripts/core/classes.gd")
+const Combat = preload("res://scripts/core/combat.gd")
+const Progression = preload("res://scripts/moba/progression.gd")
+const MobaMap = preload("res://scripts/moba/moba_map.gd")
+const BotBrain = preload("res://scripts/moba/bot_brain.gd")
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 
@@ -76,9 +80,25 @@ const ELEMENT_ACTIONS := {
 	"element_fire": E.Type.FIRE,
 }
 
-var peer_id := 1
+var peer_id := 1               # dono do personagem (bots: o host)
+var team := Combat.BLUE
+var is_bot := false            # controlado pela IA no host (ver bot_brain.gd)
+var color_index := 0
+var power := 1.0               # multiplicador de dano (níveis, itens e bônus no MOBA)
 var class_id := Classes.DEFAULT
 var cls: Dictionary          # dados da classe (classes.gd)
+var moba := false            # modo MOBA: ouro, níveis, loja e reaparecer na base
+
+# MOBA (decidido pelo host e sincronizado).
+var gold := Progression.START_GOLD
+var xp := 0
+var level := 1
+var items: Array = []
+var buffs := {}               # id do bônus -> segundos restantes
+var respawn_time := 0.0       # > 0: caído, esperando para voltar na base
+var speed_bonus := 0.0
+var cooldown_mult := 1.0
+var _gold_fraction := 0.0
 var camera: Camera3D
 var health: Health
 var aim_point := Vector3.ZERO
@@ -133,16 +153,20 @@ func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("players")
 	cls = Classes.info(class_id)
+	moba = Network.game_mode() == "moba"
 	_build_body()
 
 	health = Health.new()
 	health.name = "Health"
 	health.max_hp = cls.hp
 	health.armor = cls.armor
-	health.revivable = true
+	# Arena: caído espera um aliado com Vida. MOBA: volta sozinho na base.
+	health.revivable = not moba
 	add_child(health)
 	if multiplayer.is_server():
 		health.died.connect(_on_died)
+		if moba:
+			_recompute_stats()
 
 	effect_mesh = MeshInstance3D.new()
 	effect_mesh.mesh = BoxMesh.new()
@@ -154,18 +178,26 @@ func _ready() -> void:
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width", ".:special_cooldowns",
 		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible", ".:auto_cast_timer",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
-		"Health:frozen", "Health:ward", "Health:ward_elements",
+		"Health:frozen", "Health:ward", "Health:ward_elements", "Health:max_hp",
+		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
 	])
 	set_multiplayer_authority(peer_id, false)
 
 	if is_local():
 		nav_agent = NavigationAgent3D.new()
 		nav_agent.radius = 0.5
+		nav_agent.avoidance_enabled = false
 		# O navmesh fica 0,5 m acima da origem do personagem (que está no chão).
 		nav_agent.path_height_offset = 0.5
 		nav_agent.path_desired_distance = 0.4
 		nav_agent.target_desired_distance = ARRIVE_DISTANCE
 		add_child(nav_agent)
+
+	# Bots: a IA roda no host e usa os mesmos pedidos que um jogador.
+	if is_bot and multiplayer.is_server():
+		var brain := BotBrain.new()
+		brain.name = "BotBrain"
+		add_child(brain)
 
 
 # Gray-box: a cor identifica o jogador; o formato e os acessórios, a classe.
@@ -188,8 +220,11 @@ func _build_body() -> void:
 	capsule_mesh.radius = radius
 	body.mesh = capsule_mesh
 	body.position.y = 1.0
-	var index := maxi(Network.players.find(peer_id), 0)
-	body.material_override = E.make_material(PLAYER_COLORS[index % PLAYER_COLORS.size()])
+	var color: Color = PLAYER_COLORS[color_index % PLAYER_COLORS.size()]
+	if moba:
+		# MOBA: a cor do time, em tons diferentes para cada campeão.
+		color = Combat.TEAM_COLORS[team].darkened(0.15 * (color_index % 3))
+	body.material_override = E.make_material(color)
 	add_child(body)
 	body_parts = [body]
 
@@ -232,7 +267,7 @@ func is_local() -> bool:
 # --- Entrada (só no PC do dono) ---------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_local() or health.dead:
+	if is_bot or not is_local() or health.dead:
 		return
 	for action in ELEMENT_ACTIONS:
 		if event.is_action_pressed(action):
@@ -281,7 +316,8 @@ func _update_body_visual() -> void:
 
 
 func _move_local(delta: float) -> void:
-	_update_aim()
+	if not is_bot:
+		_update_aim()
 	if health.dead:
 		velocity = Vector3.ZERO
 		push_velocity = Vector3.ZERO
@@ -289,10 +325,10 @@ func _move_local(delta: float) -> void:
 
 	# Andar: clicar (ou segurar) no chão leva o personagem até lá pelo navmesh;
 	# as teclas de direção (setas) andam direto e cancelam o destino.
-	if Input.is_action_pressed("move_to_cursor"):
+	if not is_bot and Input.is_action_pressed("move_to_cursor"):
 		set_move_target(aim_point)
 	var direction := Vector3.ZERO
-	var keys := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var keys := Vector2.ZERO if is_bot else Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	if keys != Vector2.ZERO:
 		has_move_target = false
 		direction = Vector3(keys.x, 0.0, keys.y)
@@ -305,7 +341,7 @@ func _move_local(delta: float) -> void:
 		move_and_slide()
 		return
 
-	var speed: float = cls.speed
+	var speed: float = cls.speed + speed_bonus
 	if health.frozen > 0.0:
 		speed = 0.0
 	elif health.chilled > 0.0:
@@ -471,7 +507,7 @@ func request_ability(aim: Vector3) -> void:
 	elif cls.ability == "charge":
 		_ability_charge()
 	if used:
-		ability_cooldown = cls.ability_cooldown
+		ability_cooldown = cls.ability_cooldown * cooldown_mult
 		# Usar uma habilidade também reinicia a espera do disparo automático.
 		if not queue.is_empty():
 			auto_cast_timer = AUTO_CAST_DELAY
@@ -487,7 +523,7 @@ func request_special(target_point: Vector3) -> void:
 		return
 	if _cast_special(id, target_point):
 		var cooldowns := special_cooldowns.duplicate()
-		cooldowns[id] = Specials.SPECIALS[id].cooldown * cls.special_cooldown
+		cooldowns[id] = Specials.SPECIALS[id].cooldown * cls.special_cooldown * cooldown_mult
 		special_cooldowns = cooldowns
 		_clear_queue()
 
@@ -639,11 +675,13 @@ func _swing_weapon() -> void:
 		if _forward().angle_to(offset.normalized()) >= weapon.angle:
 			continue
 		var bonus := 1.0
+		if not Combat.can_harm(team, target):
+			continue
 		if from_shadows or _is_behind(target, offset):
 			bonus = cls.backstab
 		var target_health = target.get_node_or_null("Health")
 		if target_health != null:
-			target_health.damage(weapon.damage * bonus)
+			target_health.damage(weapon.damage * bonus * power)
 			if not elements.is_empty():
 				target_health.apply_elements(elements, weapon.element_scale * bonus)
 		_push(target, _forward() * weapon.push)
@@ -705,10 +743,12 @@ func _update_dash_hits(delta: float) -> void:
 	for target in _damageables():
 		if target in dash_hit or target.global_position.distance_to(global_position) > DASH_HIT_RADIUS:
 			continue
+		if not Combat.can_harm(team, target):
+			continue
 		dash_hit.append(target)
 		var target_health = target.get_node_or_null("Health")
 		if target_health != null:
-			target_health.damage(DASH_DAMAGE)
+			target_health.damage(DASH_DAMAGE * power)
 			if not dash_elements.is_empty():
 				target_health.apply_elements(dash_elements, 1.0)
 		var away: Vector3 = target.global_position - global_position
@@ -727,6 +767,8 @@ func do_dash(dash: Vector3, duration: float) -> void:
 # --- Atualização do host -----------------------------------------------------
 
 func _update_host(delta: float) -> void:
+	if moba:
+		_update_moba(delta)
 	weapon_timer = maxf(weapon_timer - delta, 0.0)
 	ability_cooldown = maxf(ability_cooldown - delta, 0.0)
 	invisible = maxf(invisible - delta, 0.0)
@@ -816,7 +858,8 @@ func _fire_projectile(elements: Array, charge: float) -> void:
 		"dir": _forward(),
 		"elements": elements,
 		"caster": String(name),
-		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge) * cls.spell_power,
+		"team": team,
+		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge) * cls.spell_power * power,
 		"speed": lerpf(PROJECTILE_SPEED.x, PROJECTILE_SPEED.y, charge),
 	})
 
@@ -854,7 +897,7 @@ func _arc_targets() -> Array:
 # Devolve false se não deu para lançar (ex.: teleporte para dentro de uma parede).
 func _cast_special(id: String, target_point: Vector3) -> bool:
 	if id == "meteor":
-		get_parent().spawn_entity({"type": "meteor", "pos": _clamp_target(target_point, METEOR_RANGE)})
+		get_parent().spawn_entity({"type": "meteor", "team": team, "pos": _clamp_target(target_point, METEOR_RANGE)})
 	elif id == "teleport":
 		var destination := _clamp_target(target_point, TELEPORT_RANGE)
 		if not _is_free_spot(destination):
@@ -866,12 +909,13 @@ func _cast_special(id: String, target_point: Vector3) -> bool:
 		storm_time = STORM_TIME
 		storm_tick = 0.0
 	elif id == "frost":
-		for enemy in get_tree().get_nodes_in_group("enemies"):
-			if enemy.global_position.distance_to(global_position) <= FROST_RADIUS:
-				enemy.health.freeze(FROST_TIME)
+		for enemy in _hostile_units(FROST_RADIUS):
+			enemy.health.freeze(FROST_TIME)
 		show_flash.rpc(global_position, FROST_RADIUS, E.Type.COLD)
 	elif id == "blessing":
 		for player in get_tree().get_nodes_in_group("players"):
+			if Combat.team_of(player) != team:
+				continue
 			player.health.revive()
 			player.health.apply_elements([E.Type.LIFE, E.Type.LIFE], 1.0)
 			show_flash.rpc(player.global_position, 1.5, E.Type.LIFE)
@@ -886,9 +930,7 @@ func _update_storm(delta: float) -> void:
 	if storm_tick > 0.0:
 		return
 	storm_tick = STORM_INTERVAL
-	var targets := get_tree().get_nodes_in_group("enemies").filter(
-		func(enemy): return not enemy.is_queued_for_deletion() \
-			and enemy.global_position.distance_to(global_position) <= STORM_RANGE)
+	var targets := _hostile_units(STORM_RANGE)
 	if targets.is_empty():
 		return
 	var target: Node3D = targets.pick_random()
@@ -999,24 +1041,35 @@ func show_bolt(at: Vector3) -> void:
 
 # --- Utilidades (host) -------------------------------------------------------
 
-# Inclui os outros magos: fogo amigo é intencional.
+# Tudo que tem vida, menos o próprio personagem. Quem pode ser atingido
+# depende do modo (ver combat.gd): na Arena há fogo amigo; no MOBA, não.
 func _damageables() -> Array:
 	var result: Array = []
 	for node in get_tree().get_nodes_in_group("damageable"):
-		if node != self and node is Node3D:
+		if node != self and node is Node3D and not node.is_queued_for_deletion():
 			result.append(node)
 	return result
+
+
+# Unidades hostis vivas (sem estruturas) num raio, para Tempestade e Inverno.
+func _hostile_units(radius: float) -> Array:
+	return _damageables().filter(func(node): return Combat.is_hostile(team, Combat.team_of(node)) \
+		and not node.is_in_group("structures") and not node.health.dead \
+		and node.global_position.distance_to(global_position) <= radius)
 
 
 # Feitiços (spray, beam, arco, área): a força depende da classe.
 func _hit(target: Node, elements: Array, scale: float) -> void:
 	var target_health := target.get_node_or_null("Health")
-	if target_health != null:
-		target_health.apply_elements(elements, scale * cls.spell_power)
+	if target_health == null:
+		return
+	elements = Combat.filter_elements(team, target, elements)
+	if not elements.is_empty():
+		target_health.apply_elements(elements, scale * cls.spell_power * power)
 
 
 func _push(target: Node, impulse: Vector3) -> void:
-	if target.has_method("push"):
+	if target.has_method("push") and Combat.can_harm(team, target):
 		target.push(impulse)
 
 
@@ -1033,10 +1086,94 @@ func _spawn_barrier(at: Vector3, elements: Array) -> void:
 		"pos": Vector3(at.x, 0.0, at.z),
 		"yaw": atan2(offset.x, offset.z),
 		"elements": elements,
+		"team": team,
 	})
 
 
+# --- MOBA (host) -------------------------------------------------------------
+
+func _update_moba(delta: float) -> void:
+	if health.dead:
+		respawn_time -= delta
+		if respawn_time <= 0.0:
+			_respawn()
+		return
+	_gold_fraction += Progression.PASSIVE_GOLD * delta
+	if _gold_fraction >= 1.0:
+		gold += int(_gold_fraction)
+		_gold_fraction -= int(_gold_fraction)
+	if not buffs.is_empty():
+		var left := {}
+		for id in buffs:
+			if buffs[id] - delta > 0.0:
+				left[id] = buffs[id] - delta
+		var expired := left.size() != buffs.size()
+		buffs = left
+		if expired:
+			_recompute_stats()
+
+
+func add_rewards(gold_gain: int, xp_gain: int) -> void:
+	gold += gold_gain
+	var result := Progression.apply_xp(level, xp, xp_gain)
+	var leveled: bool = result[0] != level
+	level = result[0]
+	xp = result[1]
+	if leveled:
+		_recompute_stats()
+		show_flash.rpc(global_position, 1.5, E.Type.LIFE)
+
+
+func add_buff(id: String) -> void:
+	var updated := buffs.duplicate()
+	updated[id] = Progression.BUFFS[id].duration
+	buffs = updated
+	_recompute_stats()
+
+
+# Classe + nível + itens + bônus. Ao ganhar vida máxima, ganha também a vida atual.
+func _recompute_stats() -> void:
+	var stats := Progression.stats(cls, level, items, buffs)
+	var gained: float = stats.max_hp - health.max_hp
+	health.max_hp = stats.max_hp
+	if not health.dead:
+		health.hp = clampf(health.hp + maxf(gained, 0.0), 0.0, health.max_hp)
+	health.armor = stats.armor
+	power = stats.power
+	speed_bonus = stats.speed
+	cooldown_mult = stats.cooldown
+
+
+func is_at_shop() -> bool:
+	return health.dead or global_position.distance_to(MobaMap.fountain(team)) \
+		<= MobaMap.FOUNTAIN_RADIUS + Progression.SHOP_EXTRA_RANGE
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_buy(item_id: String) -> void:
+	if not moba or not multiplayer.is_server() or _sender() != peer_id:
+		return
+	if not Progression.cannot_buy(item_id, gold, items, is_at_shop()).is_empty():
+		return
+	gold -= Progression.ITEMS[item_id].cost
+	var updated := items.duplicate()
+	updated.append(item_id)
+	items = updated
+	_recompute_stats()
+
+
+func _respawn() -> void:
+	respawn_time = 0.0
+	health.reset()
+	_recompute_stats()
+	health.hp = health.max_hp
+	var spot := MobaMap.spawn_point(team, color_index)
+	do_teleport.rpc_id(peer_id, spot)
+
+
 func _on_died() -> void:
+	if moba:
+		respawn_time = Progression.respawn_time(level)
 	_cancel_channel()
 	storm_time = 0.0
 	invisible = 0.0

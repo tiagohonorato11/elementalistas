@@ -5,6 +5,7 @@ const E = preload("res://scripts/core/elements.gd")
 
 signal died
 signal revived
+signal damaged(amount: float)   # depois da armadura; usado pela selva para provocar os monstros
 
 const BURN_DPS := 8.0
 const WET_TIME := 4.0
@@ -22,6 +23,11 @@ const WARD_TIME := 10.0
 var resistances := {}
 # Fração de todo dano recebido que é ignorada (ex.: 0.25 do Lutador).
 var armor := 0.0
+# Estruturas (torres, inibidores, nexus): só levam dano; não queimam, não
+# congelam e não são curadas por Vida.
+var immune_status := false
+# Não leva dano (ex.: torre interna enquanto a externa estiver de pé).
+var invulnerable := false
 
 var hp := 0.0
 var wet := 0.0
@@ -61,6 +67,11 @@ func damage(amount: float) -> void:
 	_change_hp(-amount)
 
 
+# Cura direta (ex.: fonte da base no MOBA). Não passa pela armadura.
+func heal(amount: float) -> void:
+	_change_hp(absf(amount))
+
+
 # Proteção elemental: imune aos elementos dados por WARD_TIME segundos.
 func set_ward(elements: Array) -> void:
 	ward_elements = elements.duplicate()
@@ -93,6 +104,10 @@ func _apply(element: int, scale: float) -> void:
 	if multiplier <= 0.0:
 		return
 	var amount: float = E.DAMAGE[element] * scale * multiplier
+	if immune_status:
+		if amount > 0.0:
+			_change_hp(-amount)
+		return
 	if element == E.Type.WATER or element == E.Type.STEAM:
 		burning = 0.0
 		wet = WET_TIME
@@ -125,9 +140,12 @@ func _change_hp(delta_hp: float) -> void:
 	if dead:
 		return
 	if delta_hp < 0.0:
+		if invulnerable:
+			return
 		delta_hp *= 1.0 - armor
 		if shielded > 0.0:
 			delta_hp *= 0.5
+		damaged.emit(-delta_hp)
 	hp = clampf(hp + delta_hp, 0.0, max_hp)
 	if hp <= 0.0:
 		dead = true

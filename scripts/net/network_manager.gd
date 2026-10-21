@@ -3,6 +3,7 @@
 extends Node
 
 const Classes = preload("res://scripts/core/classes.gd")
+const Combat = preload("res://scripts/core/combat.gd")
 
 signal players_changed
 signal connected
@@ -12,7 +13,9 @@ signal player_left(peer_id: int)
 
 const PORT := 7777
 const DISCOVERY_PORT := 7778
-const MAX_PLAYERS := 4
+const MAX_PLAYERS := 6
+const MOBA_TEAM_SIZE := 3   # com bots ligados, cada time é completado até 3
+const MODES := {"arena": "Arena (ondas)", "moba": "MOBA (3v3)"}
 const DISCOVERY_TAG := "ELEMENTISTAS"
 const DISCOVERY_TIMEOUT_MS := 3000
 const GAME_SCENE := "res://scenes/main.tscn"
@@ -21,6 +24,8 @@ const SETTINGS_PATH := "user://settings.cfg"
 
 var players: Array = []          # ids dos peers na partida (o host é sempre 1)
 var classes := {}                # id do peer -> classe escolhida (decidido pelo host)
+var teams := {}                  # id do peer -> time no MOBA (decidido pelo host)
+var settings := {"mode": "arena", "bots": true}   # escolhidos pelo host
 var my_class := Classes.DEFAULT  # classe escolhida neste PC (salva entre sessões)
 var in_game := false
 var last_message := ""           # mostrado no lobby ao voltar para ele
@@ -59,6 +64,7 @@ func host() -> Error:
 	multiplayer.multiplayer_peer = peer
 	players = [1]
 	classes = {1: my_class}
+	teams = {1: Combat.BLUE}
 	in_game = false
 	_start_broadcast()
 	players_changed.emit()
@@ -81,6 +87,7 @@ func leave() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	players = []
 	classes = {}
+	teams = {}
 	in_game = false
 	_loaded_peers = []
 	_all_loaded_sent = false
@@ -108,7 +115,8 @@ func _on_peer_connected(id: int) -> void:
 		return
 	players.append(id)
 	classes[id] = Classes.DEFAULT   # até o jogador informar a classe dele
-	_sync_players.rpc(players, classes)
+	teams[id] = _smaller_team()
+	_broadcast_lobby()
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -116,18 +124,80 @@ func _on_peer_disconnected(id: int) -> void:
 		return
 	players.erase(id)
 	classes.erase(id)
+	teams.erase(id)
 	_loaded_peers.erase(id)
-	_sync_players.rpc(players, classes)
+	_broadcast_lobby()
 	player_left.emit(id)
 	if in_game:
 		_check_all_loaded()
 
 
+func _broadcast_lobby() -> void:
+	_sync_players.rpc(players, classes, teams, settings)
+
+
 @rpc("authority", "call_local", "reliable")
-func _sync_players(list: Array, class_map: Dictionary) -> void:
+func _sync_players(list: Array, class_map: Dictionary, team_map: Dictionary, game_settings: Dictionary) -> void:
 	players = list.duplicate()
 	classes = class_map.duplicate()
+	teams = team_map.duplicate()
+	settings = game_settings.duplicate()
 	players_changed.emit()
+
+
+# --- Modo de jogo e times ----------------------------------------------------
+
+func game_mode() -> String:
+	return settings.get("mode", "arena")
+
+
+# Só o host muda o modo e os bots; todos recebem pela sincronização do lobby.
+func set_setting(key: String, value) -> void:
+	if not multiplayer.is_server():
+		return
+	settings[key] = value
+	if is_online():
+		_broadcast_lobby()
+
+
+func team_of(peer_id: int) -> int:
+	return teams.get(peer_id, Combat.BLUE)
+
+
+func set_my_team(team: int) -> void:
+	if is_online() and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+		_report_team.rpc_id(1, team)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _report_team(team: int) -> void:
+	if not multiplayer.is_server() or not (team in [Combat.BLUE, Combat.RED]):
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	if sender in players and _team_size(team) < MOBA_TEAM_SIZE:
+		teams[sender] = team
+		_broadcast_lobby()
+
+
+func _team_size(team: int) -> int:
+	return players.filter(func(peer): return team_of(peer) == team).size()
+
+
+func _smaller_team() -> int:
+	return Combat.BLUE if _team_size(Combat.BLUE) <= _team_size(Combat.RED) else Combat.RED
+
+
+# Bots que completam os times no MOBA: [{"team": 0, "class": "mage"}, ...].
+func bot_plan() -> Array:
+	var plan := []
+	if game_mode() != "moba" or not settings.get("bots", true):
+		return plan
+	for team in [Combat.BLUE, Combat.RED]:
+		for i in maxi(MOBA_TEAM_SIZE - _team_size(team), 0):
+			plan.append({"team": team, "class": Classes.ORDER.pick_random()})
+	return plan
 
 
 # --- Classes -----------------------------------------------------------------
@@ -155,7 +225,7 @@ func _report_class(id: String) -> void:
 		sender = multiplayer.get_unique_id()
 	if sender in players:
 		classes[sender] = id
-		_sync_players.rpc(players, classes)
+		_broadcast_lobby()
 
 
 func _load_class() -> void:

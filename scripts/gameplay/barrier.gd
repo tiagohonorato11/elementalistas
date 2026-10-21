@@ -6,6 +6,7 @@
 extends StaticBody3D
 
 const E = preload("res://scripts/core/elements.gd")
+const Combat = preload("res://scripts/core/combat.gd")
 
 const LIFETIME := 6.0
 const STONE_LIFETIME := 12.0
@@ -14,12 +15,14 @@ const STONE_SIZE := Vector3(3.0, 2.2, 0.9)
 const HAZARD_MARGIN := Vector3(1.2, 0.5, 1.2)
 
 var elements: Array = []
+var team := Combat.NEUTRAL
 var hazard: Array = []
 var area: Area3D
 
 
-func setup(p_elements: Array) -> void:
+func setup(p_elements: Array, p_team := Combat.NEUTRAL) -> void:
 	elements = p_elements
+	team = p_team
 
 
 func _ready() -> void:
@@ -68,5 +71,6 @@ func _physics_process(delta: float) -> void:
 		return
 	for body in area.get_overlapping_bodies():
 		var target_health = body.get_node_or_null("Health")
-		if target_health != null:
-			target_health.apply_elements(hazard, delta)
+		var hit_elements := Combat.filter_elements(team, body, hazard)
+		if target_health != null and not hit_elements.is_empty():
+			target_health.apply_elements(hit_elements, delta)

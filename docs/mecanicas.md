@@ -113,10 +113,55 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - **Cair e reviver:** com a vida em 0, o mago cai, não age e não recebe dano. Um aliado o levanta lançando qualquer feitiço com **Vida** nele (beam, área etc.).
 - **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo (só na tela de fim).
 
+## Modo MOBA (`scripts/moba/`)
+Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou Vermelho; com **Completar os times com bots**, o host completa os dois times até 3 campeões controlados pelo computador. Em "Jogar sozinho" no modo MOBA, você joga com 2 bots aliados contra 3 bots.
+
+**Mapa** (desenho original, `moba_map.gd`): 132 × 72 m, com a base de cada time numa ponta, **duas rotas** (norte e sul) e uma **selva** entre elas. O lado Vermelho é o espelho do Azul.
+
+**Estruturas** (`structure.gd`), por time:
+| Estrutura | Vida | Fica protegida até cair... |
+|---|---|---|
+| Torre externa (1 por rota) | 2200 | — |
+| Torre interna (1 por rota) | 2200 | a torre externa da rota |
+| Inibidor (1 por rota) | 1600 | a torre interna da rota |
+| Torre do nexus | 2200 | qualquer um dos inibidores |
+| Nexus | 3200 | a torre do nexus |
+
+- **Torres** atiram a cada 1 s num inimigo a até 10 m: tropas primeiro (40% da vida delas), campeões (90) só sem tropas por perto. Ignoram a selva e o Assassino invisível.
+- **Inibidor** destruído: o time inimigo ganha uma **supertropa** por leva naquela rota; ele renasce depois de 90 s.
+- **Nexus** destruído: o outro time vence.
+- Estruturas não queimam, não congelam e não são curadas por Vida.
+
+**Tropas** (`minion.gd`): a cada 30 s (a primeira aos 15 s), cada time solta 3 tropas corpo a corpo e 2 atiradoras em cada rota. Elas seguem a rota e atacam o inimigo mais próximo: outras tropas primeiro, depois campeões e por fim estruturas desprotegidas.
+
+**Selva** (time neutro): 2 Lobos e 1 Golem de cada lado e o **Guardião** no fosso central. Ficam parados até levar dano, perseguem quem estiver perto e, se você fugir para longe do acampamento, voltam e se curam.
+- Golem: dá a **Fúria do Golem** (+20% de dano por 60 s) a quem estiver perto. Renasce em 90 s.
+- Guardião (3200 de vida): o time de quem estava mais perto ganha a **Bênção do Guardião** (+25% de dano e +0,5 de velocidade por 120 s) e 150 de ouro cada. Renasce em 3 min.
+
+**Ouro, níveis e loja** (`progression.gd`):
+- Começa com 300 de ouro e ganha 2 por segundo. Tropas, monstros e campeões que morrem perto de você (até 14 m) dão ouro e xp. Torres e inibidores dão ouro para o time todo.
+- Até o nível 12; cada nível dá +8% de vida e +6% de dano.
+- **Loja** (tecla **B**, na fonte da base ou esperando para reaparecer), até 6 itens:
+
+| Item | Custo | Efeito |
+|---|---|---|
+| Amuleto de vida | 300 | +90 de vida |
+| Foco elemental | 350 | +12% de dano |
+| Botas velozes | 250 | +0,8 de velocidade |
+| Ampulheta | 400 | −15% nas recargas |
+| Couraça | 350 | +10% de armadura |
+
+**Fonte e reaparecer:** a fonte da base cura 60 de vida por segundo e causa 400 de dano por segundo a inimigos. Quem cai volta na fonte depois de 5 s + 1,5 s por nível (no MOBA não há reviver com Vida).
+
+**Sem fogo amigo no MOBA:** feitiços, golpes e habilidades não ferem aliados; em aliados só a **Vida** tem efeito (cura). Na Arena o fogo amigo continua ligado.
+
+**Bots** (`bot_brain.gd`): seguem a sua rota atrás das próprias tropas, lutam com combinações de elementos (o Mago mantém distância; Assassino e Lutador usam golpe e habilidade), não entram sozinhos no alcance de torres inimigas, voltam à base com pouca vida e compram itens.
+
 ## Ainda por fazer
 - [ ] Testar o reviver e os especiais em partida real com amigos
 - [ ] Balancear (a Tempestade num inimigo sozinho é muito forte; o tiro sem carga ficou fraco)
 - [ ] Mais arenas e um chefe
+- [ ] MOBA: minimapa, balanceamento (os níveis sobem rápido), bots que também façam a selva
 
 ## Checklist de teste manual
 - [ ] Botão direito no chão: o personagem anda até lá contornando os pilares; segurando, segue o cursor
@@ -133,3 +178,7 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - [ ] Q (spray) e depois R (spray) no mesmo inimigo: ele congela; D no congelado: estilhaça
 - [ ] F + botão esquerdo: golpe com fogo
 - [ ] F D F D + G: meteoro no cursor; S A S + G: teleporte
+- [ ] MOBA: Jogar sozinho com o modo MOBA: 2 bots aliados e 3 inimigos; tropas saem aos 15 s
+- [ ] MOBA: B na fonte abre a loja; comprar Botas aumenta a velocidade
+- [ ] MOBA: atacar o Golem azul (selva, lado esquerdo): ele revida; derrotá-lo dá a Fúria do Golem
+- [ ] MOBA: derrubar a torre externa libera a interna; o nexus só cai depois da torre do nexus

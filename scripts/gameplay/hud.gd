@@ -5,6 +5,9 @@ const E = preload("res://scripts/core/elements.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const GameState = preload("res://scripts/gameplay/game_state.gd")
 const Specials = preload("res://scripts/core/specials.gd")
+const Combat = preload("res://scripts/core/combat.gd")
+const Progression = preload("res://scripts/moba/progression.gd")
+const MobaState = preload("res://scripts/moba/moba_state.gd")
 
 const ELEMENT_ACTION_IDS := {
 	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
@@ -19,6 +22,9 @@ var wave_label: Label
 var specials_label: Label
 var banner: Label
 var _recipe_keys := {}   # id do especial -> teclas da receita (ex.: "V C V C")
+var shop_panel: PanelContainer
+var shop_status: Label
+var shop_buttons := {}   # id do item -> Button
 
 
 func _ready() -> void:
@@ -58,8 +64,97 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_status()
-	_update_wave()
+	if game_state is MobaState:
+		_update_moba()
+	else:
+		_update_wave()
 	_update_specials()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("shop") and game_state is MobaState:
+		_toggle_shop()
+
+
+# --- MOBA --------------------------------------------------------------------
+
+func _update_moba() -> void:
+	specials_label.offset_top = 210
+	banner.text = ""
+	if not is_instance_valid(player):
+		wave_label.text = ""
+		return
+	var state: MobaState = game_state
+	var lines := PackedStringArray([
+		"Time %s | Nível %d (%d/%d xp) | Ouro: %d" % [
+			Combat.TEAM_NAMES[player.team], player.level, player.xp,
+			Progression.xp_to_next(player.level), player.gold],
+		"Tempo %d:%02d | Próxima leva em %ds" % [
+			int(state.game_time) / 60, int(state.game_time) % 60, ceili(state.wave_timer)],
+		"Torres de pé: Azul %d | Vermelho %d" % [
+			state.standing(Combat.BLUE, "tower"), state.standing(Combat.RED, "tower")],
+		"Guardião: %s" % ("renasce em %ds" % ceili(state.boss_timer) if state.boss_timer > 0.0 else "no fosso central"),
+	])
+	if not player.buffs.is_empty():
+		var names := PackedStringArray()
+		for id in player.buffs:
+			names.append("%s %ds" % [Progression.BUFFS[id].label, ceili(player.buffs[id])])
+		lines.append("Bônus: " + ", ".join(names))
+	lines.append("Loja: %s (na fonte da base)" % Keybinds.action_text("shop"))
+	wave_label.text = "\n".join(lines)
+
+	var restart_hint := "R: jogar de novo | Esc: lobby" if multiplayer.is_server() \
+			else "Aguardando o host (R) | Esc: lobby"
+	if state.is_over():
+		var won: bool = state.winner == player.team
+		banner.text = "%s O time %s destruiu o nexus.\n%s" % [
+			"VITÓRIA!" if won else "DERROTA...", Combat.TEAM_NAMES[state.winner], restart_hint]
+	elif player.health.dead:
+		banner.text = "Você caiu! Volta na base em %d s." % ceili(player.respawn_time)
+	_update_shop()
+
+
+func _build_shop() -> void:
+	shop_panel = PanelContainer.new()
+	shop_panel.position = Vector2(16, 220)
+	shop_panel.visible = false
+	add_child(shop_panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+	shop_panel.add_child(column)
+	var title := Label.new()
+	title.text = "Loja (até %d itens)" % Progression.MAX_ITEMS
+	title.add_theme_font_size_override("font_size", 22)
+	column.add_child(title)
+	for id in Progression.ITEM_ORDER:
+		var item: Dictionary = Progression.ITEMS[id]
+		var button := Button.new()
+		button.text = "%s — %d de ouro (%s)" % [item.label, item.cost, item.description]
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.pressed.connect(func(): player.request_buy.rpc_id(1, id))
+		column.add_child(button)
+		shop_buttons[id] = button
+	shop_status = Label.new()
+	column.add_child(shop_status)
+
+
+func _toggle_shop() -> void:
+	if shop_panel == null:
+		_build_shop()
+	shop_panel.visible = not shop_panel.visible
+
+
+func _update_shop() -> void:
+	if shop_panel == null or not shop_panel.visible:
+		return
+	var at_shop: bool = player.is_at_shop()
+	for id in shop_buttons:
+		shop_buttons[id].disabled = not Progression.cannot_buy(id, player.gold, player.items, at_shop).is_empty()
+	var owned := PackedStringArray()
+	for id in player.items:
+		owned.append(Progression.ITEMS[id].label)
+	var hint := "" if at_shop else "Volte à fonte da base para comprar.\n"
+	shop_status.text = "%sOuro: %d | Itens: %s" % [hint, player.gold, ", ".join(owned) if not owned.is_empty() else "nenhum"]
 
 
 func _update_status() -> void:
