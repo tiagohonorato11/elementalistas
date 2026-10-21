@@ -11,6 +11,7 @@ const Hud = preload("res://scripts/gameplay/hud.gd")
 const Projectile = preload("res://scripts/gameplay/projectile.gd")
 const Barrier = preload("res://scripts/gameplay/barrier.gd")
 const Meteor = preload("res://scripts/gameplay/meteor.gd")
+const Zone = preload("res://scripts/gameplay/zone.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
@@ -183,7 +184,7 @@ func _spawn_entity(data: Dictionary) -> Node:
 		var projectile := Projectile.new()
 		projectile.setup(data.elements, data.caster, data.dir, data.get("power", 1.0), data.get("speed", 18.0),
 			data.get("team", Combat.NEUTRAL), data.get("damage", 0.0), data.get("style", "orb"),
-			data.get("backstab", 1.0))
+			data.get("backstab", 1.0), data.get("splash", 0.0))
 		node = projectile
 	elif data.type == "barrier":
 		var barrier := Barrier.new()
@@ -195,7 +196,24 @@ func _spawn_entity(data: Dictionary) -> Node:
 		meteor.team = data.get("team", Combat.NEUTRAL)
 		meteor.extra = data.get("extra", [])
 		meteor.strength = data.get("strength", 1.0)
+		meteor.caster_name = data.get("caster", "")
+		meteor.zone_elements = data.get("zone_elements", [])
+		meteor.mini = data.get("mini", false)
+		meteor.elements = data.get("elements", [])
+		meteor.damage = data.get("damage", 0.0)
+		meteor.radius = data.get("radius", Meteor.RADIUS)
+		meteor.zone_time = data.get("zone_time", Meteor.ZONE_TIME)
 		node = meteor
+	elif data.type == "zone":
+		var zone := Zone.new()
+		zone.team = data.get("team", Combat.NEUTRAL)
+		zone.caster_name = data.get("caster", "")
+		zone.elements = data.get("elements", [])
+		zone.strength = data.get("strength", 1.0)
+		zone.radius = data.get("radius", 3.5)
+		zone.duration = data.get("duration", 3.0)
+		zone.dps = data.get("dps", 0.0)
+		node = zone
 	elif data.type == "state":
 		game_state = GameState.new()
 		hud.game_state = game_state

@@ -1,4 +1,4 @@
-# Teste das skills (Q W E R) das 3 classes e dos 11 ultimates em partida solo (sem janela):
+# Teste das skills (Q W E R) das 3 classes e dos ultimates (com os MEGA) em partida solo (sem janela):
 #   godot --headless --path . res://tests/skills_smoke.tscn
 # Usa os mesmos pedidos que o jogador faz (request_charge, request_skill...),
 # reiniciando a partida para trocar de classe. Termina com código 0 se tudo passar.
@@ -11,6 +11,7 @@ class Driver extends Node:
 	var main: Node
 	var player: Node
 	var dummy: Node
+	var dummy2: Node
 	var failures := 0
 
 	func _ready() -> void:
@@ -66,11 +67,53 @@ class Driver extends Node:
 		await _seconds(0.5)
 		_check(is_equal_approx(500.0 - dummy.health.hp, 15.0), "cego (Fumaça): metade do dano (%d)" % (500 - dummy.health.hp))
 
+		var T = E.Type
+		# Orbe volátil: com Fogo fica maior e explode em área (pega o 2º alvo).
+		dummy2 = await _spawn_dummy()
+		_place(Vector3(0, 0, -5))
+		_reset(dummy2, Vector3(1.6, 0, -5.6))
+		player.request_charge(0)   # Fogo (Fogo, Raio, Arcano)
+		await _skill("q")
+		await _seconds(0.5)
+		_check(dummy.health.hp < 500.0 - 30.0 and dummy2.health.hp < 500.0,
+			"Orbe com Fogo explode em área (alvo %d, vizinho %d)" % [dummy.health.hp, dummy2.health.hp])
+		_reset(dummy2, Vector3(30, 0, 30))
+
+		# W segurado: bolha de escudo (Terra: absorve mais); Fogo queima quem está dentro.
+		_place(Vector3(0, 0, -2))
+		player.queue.add(T.EARTH)
+		player.queue.add(T.FIRE)
+		player.request_skill_held("w", dummy.global_position, "")
+		_check(player.bubble_time > 0.0 and is_equal_approx(player.health.barrier_hp, 100.0),
+			"W segurado: bolha com barreira de 100 (Terra)")
+		var hp: float = player.health.hp
+		player.health.damage(40.0)
+		_check(is_equal_approx(player.health.hp, hp) and is_equal_approx(player.health.barrier_hp, 60.0), "a barreira absorve o dano")
+		await _seconds(0.4)
+		_check(dummy.health.burning > 0.0, "bolha com Fogo queima o inimigo dentro")
+		player.bubble_time = 0.0
+		player.request_skill_held("q", dummy.global_position, "")
+		_check(player.skill_cooldowns.get("q", 0.0) == 0.0, "só o W tem versão segurada")
+
+		# E: Mini meteoro com Fogo: impacto + chão em brasa (dano por segundo).
 		_place(Vector3(0, 0, -6))
+		player.request_charge(0)
 		await _skill("e")
-		await _seconds(1.7)
-		var laser: float = 500.0 - dummy.health.hp
-		_check(laser > 40.0 and laser < 60.0, "Raio laser: ~35/s por 1,5 s (%d)" % laser)
+		await _seconds(0.75)
+		var impact: float = 500.0 - dummy.health.hp
+		_check(impact >= 40.0, "Mini meteoro: dano do impacto (%d)" % impact)
+		await _seconds(1.5)
+		_check(500.0 - dummy.health.hp > impact + 10.0 and dummy.health.burning > 0.0,
+			"Mini meteoro com Fogo: queima por 3 s (%d -> %d)" % [impact, 500 - dummy.health.hp])
+		await _seconds(2.0)
+
+		# Mini meteoro com Gravidade: magnetismo puxa para o centro.
+		_place(Vector3(2.5, 0, -6))
+		player.queue.add(T.GRAVITY)
+		player.request_skill("e", Vector3(0, 0, -6), "")
+		await _seconds(1.2)
+		_check(dummy.push_velocity.x < -3.0, "Mini meteoro com Gravidade puxa para o centro (%.1f)" % dummy.push_velocity.x)
+		await _seconds(2.5)
 
 		_fresh()
 		player.mana = 10.0
@@ -138,6 +181,52 @@ class Driver extends Node:
 		var barriers := get_tree().current_scene.get_children().filter(func(node): return node is StaticBody3D and node.get("elements") != null)
 		_check(player.health.shielded > 0.0 and barriers.size() == 8, "Fortaleza: 8 barreiras e escudo (%d)" % barriers.size())
 
+		# Sangue.
+		_place(Vector3(0, 0, -4))
+		player.health.damage(100.0)
+		var before: float = player.health.hp
+		await _ultimate([T.BLOOD], player.global_position)
+		_check(dummy.health.bleeding > 0.0 and player.health.hp > before, "Lua de sangue: sangra e cura (%d -> %d)" % [before, player.health.hp])
+
+		# Voláteis: secundário deixa zona; 3 iguais = MEGA.
+		_place(Vector3(0, 0, -8))
+		await _ultimate([T.ARCANE, T.ARCANE, T.GRAVITY], dummy.global_position)
+		await _seconds(0.1)
+		_check(_zones().any(func(zone): return zone.elements == [T.GRAVITY]), "Cataclismo + Gravidade deixa zona de Gravidade")
+		await _seconds(3.2)
+
+		_place(Vector3(0, 0, -5))
+		await _ultimate([T.SMOKE, T.SMOKE, T.SMOKE], player.global_position)
+		await _seconds(0.3)
+		_check(dummy.health.blackout > 0.0 and dummy.health.blinded > 0.0 and player.invisible > 0.0,
+			"Mega fumaça: inimigo cego e sem visão, você invisível")
+		await _seconds(3.0)
+
+		_place(Vector3(0, 0, -6))
+		await _ultimate([T.VOID, T.VOID, T.VOID], player.global_position)
+		_check(dummy.health.silenced > 0.0, "Apagão silencia")
+
+		_place(Vector3(0, 0, -7))
+		await _ultimate([T.FIRE, T.FIRE, T.FIRE], dummy.global_position)
+		await _seconds(1.2)
+		var meteors := get_tree().current_scene.get_children().filter(func(node): return node.get("zone_elements") != null)
+		_check(meteors.size() >= 2 and dummy.health.hp < 500.0, "Chuva de meteoros (%d meteoros, hp=%d)" % [meteors.size(), dummy.health.hp])
+		await _seconds(1.5)
+
+		_place(Vector3(0, 0, -4))
+		player.health.damage(60.0)
+		await _ultimate([T.SHIELD, T.SHIELD, T.SHIELD], player.global_position)
+		var hp: float = player.health.hp
+		player.health.damage(500.0)
+		_check(is_equal_approx(player.health.hp, hp) and not player.health.dead, "Bastião: invulnerável")
+		player.health.reset()
+
+		_place(Vector3(0, 0, -8))
+		await _ultimate([T.GRAVITY, T.GRAVITY, T.GRAVITY], dummy.global_position + Vector3(3, 0, 0))
+		await _seconds(0.6)
+		_check(dummy.push_velocity.x > 2.0 and dummy.health.hp < 500.0, "Buraco negro suga e fere (%.1f)" % dummy.push_velocity.x)
+		await _seconds(4.0)
+
 	# --- Assassino ---
 
 	func _test_assassin() -> void:
@@ -171,6 +260,33 @@ class Driver extends Node:
 		_check(dummy.health.chilled > 0.0 and dummy.health.hp < 500.0, "Passo sombrio solta a carga onde cai (hp=%d)" % dummy.health.hp)
 		_check(player.invisible == 0.0, "agir revela o Assassino")
 
+		# W com Vida/Escudo: sempre para ele mesmo, mesmo mirando no inimigo.
+		_place(Vector3(0, 0, -4))
+		player.health.damage(60.0)
+		var hp: float = player.health.hp
+		dummy.health.damage(100.0)
+		player.queue.add(T.LIFE)
+		await _skill("w", dummy)
+		_check(player.health.hp > hp + 20.0 and is_equal_approx(dummy.health.hp, 400.0),
+			"Assassino: Vida no W cura ele mesmo (%d -> %d), não o inimigo" % [hp, player.health.hp])
+		_fresh()
+		player.queue.add(T.SHIELD)
+		await _skill("w", dummy)
+		_check(player.health.barrier_hp > 0.0, "Assassino: Escudo no W dá escudo para ele mesmo")
+
+		# Sangue: em si mesmo dá roubo de vida; nas skills de dano, rouba vida.
+		_fresh()
+		player.queue.add(T.BLOOD)
+		await _skill("w")
+		_check(player.health.lifesteal > 0.0, "Sangue no W em si mesmo: roubo de vida")
+		_place(Vector3(0, 0, -5), PI)
+		player.health.damage(80.0)
+		hp = player.health.hp
+		player.queue.add(T.BLOOD)
+		await _skill("q")
+		await _seconds(0.4)
+		_check(dummy.health.bleeding > 0.0 and player.health.hp > hp, "Adaga com Sangue: sangramento e roubo de vida (%d -> %d)" % [hp, player.health.hp])
+
 	# --- Lutador ---
 
 	func _test_fighter() -> void:
@@ -200,7 +316,7 @@ class Driver extends Node:
 	func _spawn_dummy() -> Node:
 		main.spawn_entity({"type": "enemy", "kind": "grunt", "pos": Vector3(0, 0, -5)})
 		await _seconds(0.2)
-		var spawned: Node = get_tree().get_nodes_in_group("enemies")[0]
+		var spawned: Node = get_tree().get_nodes_in_group("enemies").filter(func(node): return node != dummy)[0]
 		spawned.set_physics_process(false)
 		spawned.health.max_hp = 500.0
 		spawned.health.reset()
@@ -214,6 +330,14 @@ class Driver extends Node:
 		dummy.rotation.y = yaw
 		player.global_position = Vector3.ZERO
 		_fresh()
+
+	func _reset(target: Node, at: Vector3) -> void:
+		target.health.reset()
+		target.push_velocity = Vector3.ZERO
+		target.global_position = at
+
+	func _zones() -> Array:
+		return get_tree().current_scene.get_children().filter(func(node): return node.get("dps") != null and node.get("elements") != null)
 
 	# Sem recargas, mana cheia e carga vazia.
 	func _fresh() -> void:

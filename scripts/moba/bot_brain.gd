@@ -180,6 +180,10 @@ func _use(slot: String, target: Node3D) -> void:
 	var target_name := String(target.name)
 	if slot == "w" and bot.health.hp < bot.health.max_hp * 0.5:
 		target_name = ""
+		# Mago ferido: segura o W (bolha de escudo).
+		if bot.cls.skills.w.has("hold"):
+			bot.request_skill_held(slot, target.global_position, target_name)
+			return
 	bot.request_skill(slot, target.global_position, target_name)
 
 

@@ -1,6 +1,6 @@
 # Capturas de tela para conferir o visual (precisa de janela, não roda com --headless):
 #   godot --path . res://tests/screenshot.tscn -- --mode=arena --out=C:/caminho/captura
-# Arena: usa Orbe, Raio laser, Maldição e Meteoro (Mago) em alvos com estados.
+# Arena: usa Orbe, Mini meteoro, Maldição, bolha de escudo e Meteoro (Mago) em alvos com estados.
 # MOBA: tira fotos das rotas com tropas, de uma base e do centro da selva.
 # Lobby (--mode=lobby): a tela inicial.
 extends Node
@@ -66,7 +66,13 @@ class Driver extends Node:
 		# Mago com Fogo, Raio e Arcano (slots 0, 1, 2).
 		await _cast([0, 0], "q", center, 0.18, "orbe")
 		await _seconds(1.0)
-		await _cast([1, 2], "e", center, 0.6, "laser")
+		await _cast([0, 0], "e", center, 1.0, "mini_meteoro")
+		await _seconds(1.0)
+		player.skill_cooldowns = {}
+		player.request_charge(2)
+		player.request_skill_held("w", center, "")
+		await _seconds(0.3)
+		await _shot("bolha")
 		await _seconds(1.5)
 		await _cast([2], "w", center, 0.1, "maldicao", String(targets[1].name))
 		await _seconds(1.0)

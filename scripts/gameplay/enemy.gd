@@ -158,7 +158,7 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
-		"Health:stunned", "Health:slowed", "Health:vulnerable", "Health:blinded",
+		"Health:stunned", "Health:slowed", "Health:vulnerable", "Health:blinded", "Health:bleeding",
 		".:action_anim", ".:action_count",
 	])
 

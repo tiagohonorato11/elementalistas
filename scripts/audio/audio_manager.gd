@@ -31,6 +31,7 @@ const SOUNDS := {
 	"element_void": [["s/element_void"], -8.0, 0.0],
 	"element_gravity": [["s/element_gravity"], -8.0, 0.0],
 	"element_smoke": [["s/element_smoke"], -8.0, 0.0],
+	"element_blood": [["s/element_blood"], -8.0, 0.0],
 	"spray_fire": [["s/spray_fire"], -6.0, 0.0],
 	"spray_water": [["s/spray_water"], -6.0, 0.0],
 	"spray_cold": [["s/spray_cold"], -8.0, 0.0],
