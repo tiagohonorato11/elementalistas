@@ -21,6 +21,7 @@ class Driver extends Node:
 			# Acelera só a parte das ondas; a perseguição é testada em velocidade normal.
 			Engine.time_scale = 4.0
 			Network.my_class = "mage"
+			Network.my_loadouts = {}   # elementos padrão da classe
 			Network.host()
 			Network.start_game()
 			step = 1

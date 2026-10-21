@@ -11,6 +11,7 @@ var health: Node
 var _burning: GPUParticles3D
 var _wet: GPUParticles3D
 var _chilled: GPUParticles3D
+var _blinded: GPUParticles3D
 var _ice: MeshInstance3D
 var _bubble: MeshInstance3D
 var _ward: MeshInstance3D
@@ -22,6 +23,9 @@ func _ready() -> void:
 	_burning = _add_emitter(E.Type.FIRE, {"amount": 28, "lifetime": 0.55, "speed": 1.8, "box": body_box, "size_scale": 1.5})
 	_wet = _add_emitter(E.Type.WATER, {"amount": 8, "lifetime": 0.6, "speed": 0.3, "box": body_box, "size_scale": 0.6})
 	_chilled = _add_emitter(E.Type.COLD, {"amount": 10, "lifetime": 1.0, "speed": 0.4, "box": body_box, "size_scale": 0.8})
+	# Cego: nuvem de fumaça em volta da cabeça.
+	_blinded = _add_emitter(E.Type.SMOKE, {"amount": 14, "lifetime": 1.2, "speed": 0.3, "sphere": radius * 1.2, "size_scale": 1.0})
+	_blinded.position.y = height * 0.85
 
 	_ice = MeshInstance3D.new()
 	var ice_mesh := BoxMesh.new()
@@ -67,6 +71,7 @@ func _process(delta: float) -> void:
 	_set_emitting(_burning, alive and health.burning > 0.0)
 	_set_emitting(_wet, alive and health.wet > 0.0)
 	_set_emitting(_chilled, alive and health.chilled > 0.0 and health.frozen <= 0.0)
+	_set_emitting(_blinded, alive and health.blinded > 0.0)
 	_ice.visible = alive and health.frozen > 0.0
 	_bubble.visible = alive and health.shielded > 0.0
 	var warded: bool = alive and health.ward > 0.0 and not health.ward_elements.is_empty()

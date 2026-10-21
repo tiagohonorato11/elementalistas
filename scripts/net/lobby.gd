@@ -1,9 +1,14 @@
 # Tela inicial: hospedar, jogar sozinho, entrar em partida encontrada ou por IP.
-# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N | --class=ID | --mode=arena|moba
+# Antes da partida cada um escolhe a classe e 3 elementos (teclas D F G na partida).
+# Linha de comando (útil para testes): -- --host | --solo | --join=IP | --autostart=N | --class=ID
+#   | --elements=7,4,5 (números de elements.gd) | --mode=arena|moba
 extends Control
 
 const Classes = preload("res://scripts/core/classes.gd")
 const Combat = preload("res://scripts/core/combat.gd")
+const E = preload("res://scripts/core/elements.gd")
+const Loadout = preload("res://scripts/core/loadout.gd")
+const CHARGE_KEYS := ["charge_1", "charge_2", "charge_3"]
 
 enum State { MENU, HOSTING, CONNECTING, CONNECTED }
 
@@ -17,6 +22,9 @@ var start_button: Button
 var status_label: Label
 var class_buttons := {}   # id da classe -> Button
 var class_description: Label
+var element_buttons := {}  # elemento -> Button
+var element_label: Label
+var _picking: Array = []   # elementos marcados (vale quando chega a 3)
 var mode_buttons := {}    # id do modo -> Button
 var team_row: HBoxContainer
 var team_buttons := {}    # time -> Button
@@ -72,6 +80,25 @@ func _build_ui() -> void:
 	class_description = _label(column, "", 15)
 	class_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	class_description.custom_minimum_size.x = 480
+
+	# Escolha dos 3 elementos: opostos ficam bloqueados.
+	var element_grid := GridContainer.new()
+	element_grid.columns = 4
+	element_grid.add_theme_constant_override("h_separation", 6)
+	element_grid.add_theme_constant_override("v_separation", 6)
+	column.add_child(element_grid)
+	for element in Loadout.BASIC:
+		var button := _button(element_grid, E.NAMES[element], _on_element_pressed.bind(element))
+		button.toggle_mode = true
+		button.custom_minimum_size = Vector2(116, 34)
+		button.add_theme_color_override("font_pressed_color", Color.BLACK)
+		var style := StyleBoxFlat.new()
+		style.bg_color = E.COLORS[element]
+		style.set_corner_radius_all(6)
+		button.add_theme_stylebox_override("pressed", style)
+		element_buttons[element] = button
+	element_label = _label(column, "", 15)
+	_picking = Network.my_elements()
 	_refresh_class()
 
 	# Modo de jogo (o host escolhe) e, no MOBA, time e bots.
@@ -160,6 +187,32 @@ func _refresh_class() -> void:
 	for id in class_buttons:
 		class_buttons[id].set_pressed_no_signal(id == Network.my_class)
 	class_description.text = Classes.info(Network.my_class).description
+	_picking = Network.my_elements()
+	_refresh_elements()
+
+
+func _on_element_pressed(element: int) -> void:
+	if element in _picking:
+		_picking.erase(element)
+	elif Loadout.can_add(_picking, element):
+		_picking.append(element)
+	if Loadout.is_valid(_picking):
+		Network.set_my_elements(_picking)
+	_refresh_elements()
+
+
+func _refresh_elements() -> void:
+	for element in element_buttons:
+		var chosen: bool = element in _picking
+		element_buttons[element].set_pressed_no_signal(chosen)
+		element_buttons[element].disabled = not chosen and not Loadout.can_add(_picking, element)
+	if _picking.size() < Loadout.SIZE:
+		element_label.text = "Elementos: escolha mais %d (opostos não combinam)." % (Loadout.SIZE - _picking.size())
+		return
+	var keys := PackedStringArray()
+	for i in _picking.size():
+		keys.append("%s: %s" % [Keybinds.action_text(CHARGE_KEYS[i]), E.NAMES[_picking[i]]])
+	element_label.text = "Elementos:  " + "   ".join(keys) + "   (clique num escolhido para trocar)"
 
 
 func _on_mode_pressed(id: String) -> void:
@@ -197,7 +250,10 @@ func _players_text() -> String:
 		var who := "Host" if peer == 1 else "Jogador %d" % (i + 1)
 		if peer == multiplayer.get_unique_id():
 			who += " (você)"
-		var line := "%s: %s" % [who, Classes.info(Network.class_of(peer)).label]
+		var element_names := PackedStringArray()
+		for element in Network.elements_of(peer):
+			element_names.append(E.NAMES[element])
+		var line := "%s: %s (%s)" % [who, Classes.info(Network.class_of(peer)).label, ", ".join(element_names)]
 		if moba:
 			line += " — time %s" % Combat.TEAM_NAMES[Network.team_of(peer)]
 		names.append(line)
@@ -285,6 +341,10 @@ func _parse_command_line() -> void:
 			_autostart = arg.get_slice("=", 1).to_int()
 		elif arg.begins_with("--class="):
 			Network.set_my_class(arg.get_slice("=", 1))
+			_refresh_class()
+		elif arg.begins_with("--elements="):
+			var picked: Array = Array(arg.get_slice("=", 1).split(",")).map(func(text): return text.to_int())
+			Network.set_my_elements(picked)
 			_refresh_class()
 		elif arg.begins_with("--mode="):
 			Network.set_setting("mode", arg.get_slice("=", 1))

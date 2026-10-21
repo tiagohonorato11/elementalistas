@@ -1,101 +1,116 @@
 # Mecânicas — Elementistas
 
-Documento de design escrito com nossas próprias palavras. A referência de gênero são jogos co-op de magos elementais (como Magicka 2), estudados **apenas por observação**. Nenhum código, asset, texto ou nome do jogo original é usado aqui. Todos os números são nossos e ficam em `scripts/core/elements.gd`.
+Documento de design escrito com nossas próprias palavras. A referência de gênero são jogos co-op de magos elementais (como Magicka 2), estudados **apenas por observação**. Nenhum código, asset, texto ou nome do jogo original é usado aqui. Todos os números são nossos e ficam em `scripts/core/` (`elements.gd`, `classes.gd`, `ultimates.gd`).
+
+## Antes da partida: classe e 3 elementos (lobby)
+Cada jogador escolhe a **classe** e **3 elementos diferentes** entre os 11 (fica salvo no PC, por classe). O 1º fica na tecla **D**, o 2º no **F** e o 3º no **G**.
+- **Opostos não podem ser escolhidos juntos** (eles se anulariam): Fogo×Frio, Água×Raio, Vida×Arcano, Terra×Raio, Vazio×Escudo e Fumaça×Água. No lobby, os opostos ficam bloqueados. A Gravidade não tem oposto.
+- Padrões: Mago = Fogo, Raio, Arcano; Assassino = Arcano, Frio, Terra; Lutador = Fogo, Terra, Escudo.
+- Os bots sorteiam uma escolha válida.
+
+## Carga (D F G) e skills (Q W E R)
+- **D F G** somam o elemento escolhido numa **carga de até 3** (pode repetir: Fogo, Fogo, Raio).
+  - Fusões continuam: Água + Fogo = **Vapor**; Água + Frio = **Gelo**.
+- A **próxima skill** (Q, W, E ou R) usa **todos** os elementos da carga e a esvazia. Sem carga, Q/W/E saem na versão básica; o **R precisa de carga**.
+- Cada elemento da carga aplica o seu efeito (dano e estado, tabela abaixo), além do dano próprio da skill.
+- Toda skill gasta **mana** e tem **recarga**. A mana se regenera sozinha (6× mais rápido na fonte do MOBA).
+- **Golpe básico** (botão esquerdo): não usa a carga; dano em cone à frente com empurrão.
+- O **W** depende do que está **sob o mouse** (até 10 m): inimigo → enfraquece; aliado, ninguém ou você mesmo → fortalece. **Aliado caído:** o W o levanta (Arena).
 
 ## Classes (`scripts/core/classes.gd`)
-Cada jogador escolhe a classe no lobby (fica salva no PC). Todas usam a mesma fila de elementos e os mesmos feitiços; mudam atributos, arma e habilidade (**Ctrl**). O grupo pode repetir classes.
-
 | | Mago | Assassino | Lutador |
 |---|---|---|---|
 | Vida / velocidade | 200 / 5 | 140 / 6,5 | 320 / 4,5 |
+| Mana / regeneração | 160 / 5 por s | 110 / 6 por s | 100 / 4 por s |
 | Armadura | — | — | 25% de todo dano |
-| Força dos feitiços | 100% | 70% | 80% |
-| Recarga dos especiais | 1× | 1,5× | 1,5× |
-| Arma (botão esquerdo) | cajado: 20, a cada 0,6 s | adagas: 14, a cada 0,3 s | arma pesada: 35, a cada 0,9 s, cone largo, empurra forte |
-| Elementos na arma | 1 golpe (×0,8) | **3 golpes** (×1,0) | 1 golpe (×1,2) |
-| Bônus | — | **pelas costas: 2×** | — |
-| Habilidade (Ctrl) | **Escudo arcano**: metade do dano por 4 s e empurra quem está a até 4 m (12 s de recarga) | **Passo sombrio**: avança até 6 m e fica **invisível** por 3 s, ignorado pelos inimigos; o próximo golpe vale 2×; atacar revela (8 s) | **Investida**: corre 7 m; quem estiver no caminho leva 30 + os elementos da fila e é empurrado, aliados também (7 s) |
+| Força dos elementos | 100% | 80% | 80% |
+| Golpe (botão esquerdo) | cajado: 20, a cada 0,6 s | adagas: 14, a cada 0,3 s; **pelas costas 2×** | arma pesada: 35, a cada 0,9 s, empurra forte |
 
-## Elementos e teclas
-As teclas abaixo são o padrão; cada jogador pode trocá-las em **Configurações**, no lobby. As escolhas ficam salvas em `user://settings.cfg`.
-
-| Tecla | Elemento | Dano base* | Efeito |
+**Mago**
+| Tecla | Skill | Efeito | Mana / recarga |
 |---|---|---|---|
-| Q | Água | 4 | molha, apaga fogo |
-| W | Vida | −30 (cura) | — |
-| E | Escudo | 0 | barreira / proteção |
-| R | Frio | 10 | resfria (lentidão), apaga fogo |
-| A | Raio | 30 | dano dobrado em alvo molhado |
-| S | Arcano | 35 | — |
-| D | Terra | 40 | — |
-| F | Fogo | 15 | incendeia (8/s por 4s) ou seca alvo molhado |
-| — | Vapor (Água+Fogo) | 20 | molha |
-| — | Gelo (Água+Frio) | 25 | resfria |
+| Q | **Orbe** | projétil (30) que leva a carga; com Terra vira pedra, com Gelo vira cristal | 15 / 1,5 s |
+| W | **Bênção / Maldição** | aliado ou você: cura 30 e protege contra os elementos da carga; inimigo: a carga + lento 40% e +20% de dano recebido por 4 s | 30 / 8 s |
+| E | **Raio laser** | feixe contínuo de 1,5 s (35/s) na direção do mouse, com a carga | 35 / 6 s |
+| R | **Ultimate** | ver tabela abaixo | 80 / 60 s |
 
-\* Por acerto (projétil e área) ou por segundo (spray, beam e arco).
+**Assassino**
+| Tecla | Skill | Efeito | Mana / recarga |
+|---|---|---|---|
+| Q | **Adaga** | projétil rápido (24) com a carga; **pelas costas 2×** | 12 / 2 s |
+| W | **Véu / Marca** | aliado ou você: **invisível** por 2,5 s (os inimigos ignoram; agir revela); inimigo: a carga + **marcado** (+30% de dano recebido) por 4 s | 25 / 10 s |
+| E | **Passo sombrio** | salta até 6 m na direção do mouse e solta a carga (+25) em quem estiver a 2,5 m de onde cai | 25 / 8 s |
+| R | **Ultimate** | força 80% | 70 / 60 s |
 
-## Fila (até 5 elementos)
-Ao adicionar um elemento, nesta ordem:
-1. Se houver um **oposto** na fila, os dois somem. Pares opostos:
-   - Água↔Raio
-   - Vida↔Arcano
-   - Fogo↔Frio
-   - Terra↔Raio
-   - Escudo↔Escudo
-   - Fogo↔Gelo
-   - Frio↔Vapor
-2. Se houver um **par de fusão**, os dois viram um só: Água+Fogo = Vapor; Água+Frio = Gelo.
-3. Caso contrário, o elemento entra no fim da fila, se ela tiver espaço.
+**Lutador**
+| Tecla | Skill | Efeito | Mana / recarga |
+|---|---|---|---|
+| Q | **Golpe giratório** | 35 + a carga em todos a até 2,8 m, com empurrão | 15 / 4 s |
+| W | **Grito / Desafio** | aliado ou você: cura 20, +30% de velocidade e −30% de dano recebido por 4 s; inimigo: a carga + lento 40% | 25 / 10 s |
+| E | **Investida** | corre 7 m; quem estiver no caminho leva 30 + a carga e é empurrado | 25 / 7 s |
+| R | **Ultimate** | força 80% | 60 / 60 s |
 
-## Forma do feitiço (prioridade de cima para baixo)
-1. Tem Escudo → **Barreira**
-2. Tem Terra ou Gelo → **Projétil**
-3. Tem Arcano ou Vida → **Raio contínuo (beam)**
-4. Tem Raio → **Arco elétrico** (salta para até 3 alvos)
-5. Resto (Água, Fogo, Frio, Vapor) → **Spray** em cone
+## Ultimate (R): depende da carga (`scripts/core/ultimates.gd`)
+O **elemento que mais aparece na carga** decide o ultimate (no empate, o que entrou primeiro). Os outros elementos da carga vão junto como **reforço** (por exemplo, Terra, Terra, Fogo = Terremoto que também queima). O HUD mostra qual sairia.
 
-## Controles (padrão)
-- **Andar:** clique com o **botão direito** no chão e o personagem vai até lá pelo caminho mais curto, contornando obstáculos. Segurando o botão, ele segue o cursor. Clicar dentro de um obstáculo leva até o ponto alcançável mais próximo. As setas também andam e cancelam o destino.
-- **Mira:** sempre no ponteiro do mouse.
-- **Lançar à frente (automático):** monte a combinação (Q W E R / A S D F) e **espere 1 s** sem apertar outro elemento ou habilidade. A fila é lançada na direção do mouse; cada elemento ou habilidade nova reinicia a espera, e o HUD mostra a contagem.
-  - **Projétil** (Terra/Gelo): sai com força total (2× de dano, mais rápido e com mais empurrão).
-  - **Spray, beam e arco:** duram 2 s. Apertar um elemento no meio interrompe e começa outra combinação.
-  - **Barreira:** sai na hora em que a espera termina.
+| Elemento dominante | Ultimate | Efeito |
+|---|---|---|
+| Fogo | **Meteoro** | cai no cursor (até 14 m) após 1 s: Fogo×2 + Terra×2 num raio de 4,5 m e empurrão; atinge aliados na Arena |
+| Raio | **Tempestade** | por 5 s, um raio duplo a cada 0,5 s num inimigo a até 14 m |
+| Frio / Gelo | **Inverno** | congela por 3,5 s os inimigos a até 10 m |
+| Vida | **Bênção** | revive e cura o seu time |
+| Terra | **Terremoto** | 60 de dano e **atordoa** 1,5 s os inimigos a até 7 m |
+| Arcano | **Cataclismo** | depois de 1 s, explosão de 120 no cursor (raio 4 m) |
+| Água / Vapor | **Maremoto** | onda à frente (9 m) que molha forte e empurra |
+| Escudo | **Fortaleza** | anel de 8 barreiras e escudo (metade do dano por 5 s) no time a até 8 m |
+| Vazio | **Eclipse** | 30 de dano + Vazio×2 nos inimigos a até 9 m: some escudo, proteção e bônus e eles perdem mana |
+| Gravidade | **Singularidade** | suga os inimigos a até 8 m do cursor para o centro, 40 de dano e atordoa 1 s |
+| Fumaça | **Cortina de fumaça** | cega os inimigos a até 8 m e deixa o seu time por perto invisível por 3 s |
 
-## Modos de lançar (na hora)
-- **Área** (**Shift**): aplica a fila a todos num raio de 4 m; com Água, empurra. Com Escudo, cria um anel de barreiras.
-- **Em si mesmo** (**Espaço** ou botão do meio): aplica a fila no próprio personagem (Vida cura, Fogo queima!).
-  - **Escudo sozinho:** metade do dano por 5 s.
-  - **Escudo + elementos** (**proteção elemental**): imune a esses elementos por 10 s, por exemplo Escudo + Fogo antes de usar a parede de fogo.
-- **Golpe com a arma** (**botão esquerdo**): dano em cone à frente com empurrão; os números dependem da classe. Elementos na fila vão para a arma e são consumidos.
-- **Feitiço especial** (**G**) e **habilidade da classe** (**Ctrl**).
+## Elementos
+| Elemento | Dano base* | Efeito |
+|---|---|---|
+| Água | 4 | molha, apaga fogo |
+| Vida | −30 (cura) | levanta caídos |
+| Escudo | 0 | barreiras / proteção |
+| Frio | 10 | resfria (lentidão), apaga fogo |
+| Raio | 30 | dano dobrado em alvo molhado |
+| Arcano | 35 | — |
+| Terra | 40 | estilhaça congelado (2×) |
+| Fogo | 15 | incendeia (8/s por 4 s) ou seca alvo molhado |
+| Vapor (Água+Fogo) | 20 | molha |
+| Gelo (Água+Frio) | 25 | resfria |
+| Vazio | 25 | desfaz escudo, proteção elemental, aceleração e fortificação; drena 15 de mana |
+| Gravidade | 20 | **puxa** o alvo para quem lançou (em vez de empurrar) e deixa **pesado** (−30% de velocidade por 2 s) |
+| Fumaça | 5 | **cega** por 3 s; Água tira a fumaça |
 
-## Barreiras
-| Fila | Resultado |
-|---|---|
-| Escudo | parede que bloqueia movimento e projéteis por 6 s |
-| Escudo + Terra | muro de pedra: mais grosso, dura 12 s |
-| Escudo + outros elementos | **parede elemental**: aplica os elementos (por segundo) em quem encostar, aliados também. Escudo + Vida cura quem estiver perto |
+\* Por acerto, ou por segundo no Raio laser. Multiplicado pela força da classe e pelo nível/itens.
 
 ## Estados e interações
 - **Molhado** (Água, Vapor): Raio causa 2×. Fogo seca em vez de incendiar.
 - **Queimando** (Fogo): 8 de dano por segundo por 4 s. Água e Frio apagam.
 - **Resfriado** (Frio, Gelo): metade da velocidade.
-- **Congelado** (Frio/Gelo em alvo molhado, ou o especial Inverno): não anda, não ataca e não lança.
-  - **Terra estilhaça** o alvo congelado: 2× de dano e o gelo quebra.
-  - **Fogo descongela.**
-- **Empurrão**: Água (spray e área), projéteis (mais com Terra e com carga), golpe e Meteoro. O Brutamontes resiste (30%).
+- **Congelado** (Frio/Gelo em alvo molhado, ou o Inverno): não anda nem age. **Terra estilhaça** (2×); **Fogo descongela**.
+- **Atordoado** (Terremoto): não anda nem age, sem o gelo.
+- **Lento** (Maldição, Desafio), **marcado** (Maldição, Marca: leva mais dano), **acelerado** e **fortificado** (Grito).
+- **Cego** (Fumaça): inimigos e tropas não conseguem atacar; personagens causam metade do dano.
+- **Pesado** (Gravidade): −30% de velocidade.
+- **Proteção elemental** (Bênção com carga): imune aos elementos da carga por 10 s.
+- **Empurrão**: projéteis (mais com Terra), golpe, Golpe giratório, Investida, Maremoto, Cataclismo e Meteoro. O Brutamontes resiste (30%).
+- Estruturas não queimam, não congelam, não são atordoadas nem ficam lentas.
 
-## Feitiços especiais (G com a receita na fila)
-Monte os elementos na fila (a ordem não importa) e aperte **G**. Cada um tem recarga própria, mostrada no canto da tela.
+## Barreiras (Fortaleza)
+| Carga | Resultado |
+|---|---|
+| Só Escudo | paredes que bloqueiam movimento e projéteis por 6 s |
+| Escudo + Terra | muros de pedra: mais grossos, duram 12 s |
+| Escudo + outros | **paredes elementais**: aplicam os elementos (por segundo) em quem encostar, aliados também; com Vida, curam |
 
-| Especial | Receita (teclas padrão) | Efeito | Recarga |
-|---|---|---|---|
-| Meteoro | Fogo, Terra, Fogo, Terra (F D F D) | cai no cursor (até 14 m) após 1 s: Fogo×2 + Terra×2 num raio de 4,5 m e empurrão; atinge aliados | 20 s |
-| Tempestade | Frio, Raio, Frio, Raio (R A R A) | por 5 s, um raio duplo a cada 0,5 s num inimigo próximo | 25 s |
-| Inverno | Frio, Escudo, Frio (R E R) | congela por 3,5 s os inimigos num raio de 10 m | 30 s |
-| Teleporte | Arcano, Raio, Arcano (S A S) | salta até o cursor (até 10 m); falha se o destino estiver bloqueado | 8 s |
-| Bênção | Vida, Escudo, Vida (W E W) | revive todos os magos caídos e cura 60 | 40 s |
+## Controles (padrão)
+Todas as teclas podem ser trocadas em **Configurações**, no lobby (salvas em `user://settings.cfg`).
+- **Andar:** **botão direito** no chão: o personagem vai até lá pelo caminho mais curto, contornando obstáculos; segurando, segue o cursor. As setas também andam.
+- **Mira:** sempre no ponteiro do mouse.
+- **D F G:** carregar elementos. **Q W E R:** skills. **Botão esquerdo:** golpe. **B:** loja (MOBA). **Esc:** sair.
 
 ## Inimigos (`scripts/gameplay/enemy.gd`)
 | Tipo | Vida | Ataque | Particularidade |
@@ -110,7 +125,7 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 ## Partida (`scripts/gameplay/game_state.gd`)
 - 5 s de preparação e depois **5 ondas** crescentes. Cada jogador além do primeiro adiciona 50% de inimigos.
 - Entre ondas, há 6 s de pausa, e quem caiu volta com metade da vida.
-- **Cair e reviver:** com a vida em 0, o mago cai, não age e não recebe dano. Um aliado o levanta lançando qualquer feitiço com **Vida** nele (beam, área etc.).
+- **Cair e reviver:** com a vida em 0, o personagem cai, não age e não recebe dano. Um aliado o levanta com o **W** (mouse sobre ele), com qualquer elemento **Vida** nele ou com o ultimate **Bênção**.
 - **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo (só na tela de fim).
 
 ## Modo MOBA (`scripts/moba/`)
@@ -140,7 +155,7 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 
 **Ouro, níveis e loja** (`progression.gd`):
 - Começa com 300 de ouro e ganha 2 por segundo. Tropas, monstros e campeões que morrem perto de você (até 14 m) dão ouro e xp. Torres e inibidores dão ouro para o time todo.
-- Até o nível 12; cada nível dá +8% de vida e +6% de dano.
+- Até o nível 12; cada nível dá +8% de vida, +8% de mana e +6% de dano.
 - **Loja** (tecla **B**, na fonte da base ou esperando para reaparecer), até 6 itens:
 
 | Item | Custo | Efeito |
@@ -148,36 +163,36 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 | Amuleto de vida | 300 | +90 de vida |
 | Foco elemental | 350 | +12% de dano |
 | Botas velozes | 250 | +0,8 de velocidade |
-| Ampulheta | 400 | −15% nas recargas |
+| Ampulheta | 400 | −15% nas recargas e +40 de mana |
 | Couraça | 350 | +10% de armadura |
 
-**Fonte e reaparecer:** a fonte da base cura 60 de vida por segundo e causa 400 de dano por segundo a inimigos. Quem cai volta na fonte depois de 5 s + 1,5 s por nível (no MOBA não há reviver com Vida).
+**Fonte e reaparecer:** a fonte da base cura 60 de vida por segundo e causa 400 de dano por segundo a inimigos. Quem cai volta na fonte depois de 5 s + 1,5 s por nível (no MOBA não há reviver). A fonte também recupera mana rápido.
 
-**Sem fogo amigo no MOBA:** feitiços, golpes e habilidades não ferem aliados; em aliados só a **Vida** tem efeito (cura). Na Arena o fogo amigo continua ligado.
+**Sem fogo amigo no MOBA:** skills e golpes não ferem aliados; em aliados só a **Vida** tem efeito (cura). Na Arena o fogo amigo continua ligado.
 
-**Bots** (`bot_brain.gd`): seguem a sua rota atrás das próprias tropas, lutam com combinações de elementos (o Mago mantém distância; Assassino e Lutador usam golpe e habilidade), não entram sozinhos no alcance de torres inimigas, voltam à base com pouca vida e compram itens.
+**Bots** (`bot_brain.gd`): seguem a sua rota atrás das próprias tropas, lutam com as skills da classe carregando elementos da escolha deles (o Mago mantém distância; o W cura quando estão feridos; o R sai às vezes contra campeões), não entram sozinhos no alcance de torres inimigas, voltam à base com pouca vida e compram itens.
 
 ## Ainda por fazer
-- [ ] Testar o reviver e os especiais em partida real com amigos
-- [ ] Balancear (a Tempestade num inimigo sozinho é muito forte; o tiro sem carga ficou fraco)
+- [ ] Testar as skills e os ultimates em partida real com amigos
+- [ ] Balancear mana, recargas e dano das skills (números iniciais)
+- [ ] Ícones desenhados para as skills (hoje são caixas com o nome)
 - [ ] Mais arenas e um chefe
-- [ ] MOBA: minimapa, balanceamento (os níveis sobem rápido), bots que também façam a selva
+- [ ] MOBA: balanceamento (os níveis sobem rápido), bots que também façam a selva
 
 ## Checklist de teste manual
+- [ ] No lobby: escolher a classe e 3 elementos; os opostos ficam bloqueados
 - [ ] Botão direito no chão: o personagem anda até lá contornando os pilares; segurando, segue o cursor
-- [ ] Q + F mostra "Vapor" no HUD; Q + A esvazia a fila
-- [ ] D e esperar 1 s: projétil com força total acerta um inimigo (até −80) e o empurra
-- [ ] F e esperar: spray em cone por 2 s; o inimigo fica "queimando"
-- [ ] Q no inimigo e depois A: dano dobrado
-- [ ] E e esperar: barreira à frente que some em 6 s
-- [ ] W + Espaço: cura o próprio personagem
+- [ ] D D F: a carga mostra 3 elementos; um 4º não entra
+- [ ] Q sem carga: Orbe básico; Q com Fogo: o inimigo queima; a skill entra em recarga e gasta mana
+- [ ] Sem mana, a skill não sai (o ícone fica azul "sem mana")
+- [ ] W com o mouse num inimigo: ele fica lento/marcado; W no vazio: cura você
+- [ ] Um amigo cai (Arena): W com o mouse nele o levanta
+- [ ] E (Mago): Raio laser por 1,5 s
+- [ ] R sem carga não sai; R com Fogo: Meteoro no cursor; o HUD mostra o ultimate da carga
+- [ ] Assassino: W em si mesmo fica invisível; Q pelas costas causa o dobro; E salta
+- [ ] Lutador: Q acerta tudo ao redor; E atropela
 - [ ] Salamandra não sofre dano de Fogo; Água ou Frio a derrubam mais rápido
-- [ ] Um amigo cai; W e esperar com a mira nele (beam de Vida) o levanta com metade da vida
 - [ ] Todos caídos: aparece "DERROTA"; o host aperta R e a partida recomeça
-- [ ] E + F e esperar: parede de fogo; inimigos que encostam queimam
-- [ ] Q (spray) e depois R (spray) no mesmo inimigo: ele congela; D no congelado: estilhaça
-- [ ] F + botão esquerdo: golpe com fogo
-- [ ] F D F D + G: meteoro no cursor; S A S + G: teleporte
 - [ ] MOBA: Jogar sozinho com o modo MOBA: 2 bots aliados e 3 inimigos; tropas saem aos 15 s
 - [ ] MOBA: B na fonte abre a loja; comprar Botas aumenta a velocidade
 - [ ] MOBA: atacar o Golem azul (selva, lado esquerdo): ele revida; derrotá-lo dá a Fúria do Golem

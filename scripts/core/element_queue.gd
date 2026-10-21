@@ -1,9 +1,10 @@
-# Fila de elementos do mago (até 5). Lógica pura, sem nós, para ser testável.
+# Carga de elementos das skills (teclas D F G): até 3, pode repetir; opostos se
+# anulam e pares compatíveis se fundem. Lógica pura, sem nós, para ser testável.
 extends RefCounted
 
 const E = preload("res://scripts/core/elements.gd")
 
-const MAX_SIZE := 5
+const MAX_SIZE := 3
 
 var elements: Array = []
 

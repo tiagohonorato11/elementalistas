@@ -1,37 +1,43 @@
-# HUD: fila de elementos, vida, onda atual, feitiços especiais, avisos e ajuda de controles.
+# HUD: skills (Q W E R) com recarga e custo, mana, carga de elementos (D F G),
+# vida, onda/placar, prévia do ultimate, avisos e ajuda de controles.
 extends CanvasLayer
 
 const E = preload("res://scripts/core/elements.gd")
-const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const GameState = preload("res://scripts/gameplay/game_state.gd")
-const Specials = preload("res://scripts/core/specials.gd")
+const Ultimates = preload("res://scripts/core/ultimates.gd")
+const Classes = preload("res://scripts/core/classes.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
 
-const ELEMENT_ACTION_IDS := {
-	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
-	E.Type.COLD: "element_cold", E.Type.LIGHTNING: "element_lightning", E.Type.ARCANE: "element_arcane",
-	E.Type.EARTH: "element_earth", E.Type.FIRE: "element_fire",
-}
+const CHARGE_ACTIONS := ["charge_1", "charge_2", "charge_3"]
+const SKILL_ACTIONS := {"q": "skill_q", "w": "skill_w", "e": "skill_e", "r": "skill_r"}
+const COOLDOWN_COLOR := Color(0.25, 0.25, 0.3)
+const READY_COLOR := Color(0.35, 0.3, 0.6)
+const NO_MANA_COLOR := Color(0.25, 0.3, 0.55)
 
 var player: Node
 var game_state: Node
 var status_label: Label
 var wave_label: Label
-var specials_label: Label
+var specials_label: Label   # prévia do ultimate com a carga atual
 var banner: Label
-var _recipe_keys := {}   # id do especial -> teclas da receita (ex.: "V C V C")
 var shop_panel: PanelContainer
 var shop_status: Label
 var shop_buttons := {}   # id do item -> Button
-var _slots: Array = []   # [PanelContainer, Label] dos 5 espaços da fila
+var _slots: Array = []   # [PanelContainer, Label] dos 3 espaços da carga
+var _skill_icons := {}   # slot -> [PanelContainer, Label]
+var _legend: Array = []  # [PanelContainer, Label] das teclas D F G
+var _legend_shown: Array = []
+var mana_bar: ProgressBar
+var mana_label: Label
 
 const SHORT_NAMES := {
 	E.Type.WATER: "Água", E.Type.LIFE: "Vida", E.Type.SHIELD: "Esc.", E.Type.COLD: "Frio",
 	E.Type.LIGHTNING: "Raio", E.Type.ARCANE: "Arc.", E.Type.EARTH: "Terra", E.Type.FIRE: "Fogo",
 	E.Type.STEAM: "Vapor", E.Type.ICE: "Gelo",
+	E.Type.VOID: "Vazio", E.Type.GRAVITY: "Grav.", E.Type.SMOKE: "Fum.",
 }
 
 
@@ -41,6 +47,8 @@ func _ready() -> void:
 	var help := _make_label(15)
 	help.position = Vector2(16, 676)
 	help.text = _help_text()
+	_build_skill_row()
+	_build_mana_bar()
 	_build_queue_row()
 	_build_legend_row()
 	var minimap := Minimap.new()
@@ -60,11 +68,6 @@ func _ready() -> void:
 	specials_label.offset_left = -520
 	specials_label.offset_right = -16
 	specials_label.offset_top = 110
-	for id in Specials.ORDER:
-		var keys := PackedStringArray()
-		for element in Specials.SPECIALS[id].recipe:
-			keys.append(Keybinds.action_text(ELEMENT_ACTION_IDS[element]))
-		_recipe_keys[id] = " ".join(keys)
 
 	banner = _make_label(40)
 	banner.set_anchors_preset(Control.PRESET_CENTER)
@@ -78,6 +81,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_status()
 	_update_queue_row()
+	_update_skills()
 	if game_state is MobaState:
 		_update_moba()
 	else:
@@ -175,29 +179,11 @@ func _update_status() -> void:
 	if not is_instance_valid(player):
 		status_label.text = "Aguardando jogadores..."
 		return
-	var shape := SpellResolver.resolve_shape(player.queue_view)
-	var spell_text: String = SpellResolver.SHAPE_NAMES[shape]
-	var special := Specials.match_special(player.queue_view)
-	if not special.is_empty():
-		spell_text += "  (ou especial: %s)" % Specials.SPECIALS[special].label
-	if player.fx_shape == SpellResolver.Shape.PROJECTILE:
-		spell_text = "Carregando projétil: %d%%" % roundi(player.fx_length * 100.0)
-	elif player.auto_cast_timer > 0.0:
-		spell_text += "  — lança em %.1f s" % player.auto_cast_timer
-	var ability: String = player.cls.ability_label
-	var ability_state := "pronta" if player.ability_cooldown <= 0.0 else "%ds" % ceili(player.ability_cooldown)
-	var class_text := "%s | %s (%s): %s" % [
-		player.cls.label, ability, Keybinds.action_text("class_ability"), ability_state]
-	if player.weapon_charges > 0:
-		var weapon_names := PackedStringArray()
-		for element in player.weapon_elements:
-			weapon_names.append(E.NAMES[element])
-		class_text += " | Arma: %s x%d" % [", ".join(weapon_names), player.weapon_charges]
+	var class_text: String = player.cls.label
 	if player.invisible > 0.0:
 		class_text += " | INVISÍVEL"
-	status_label.text = "%s\nFeitiço: %s\nVida: %d/%d %s\nJogadores: %d" % [
+	status_label.text = "%s\nVida: %d/%d %s\nJogadores: %d" % [
 		class_text,
-		spell_text,
 		ceili(player.health.hp),
 		ceili(player.health.max_hp),
 		player.health.status_text(),
@@ -205,16 +191,17 @@ func _update_status() -> void:
 	]
 
 
+# Qual ultimate a carga atual geraria (canto superior direito).
 func _update_specials() -> void:
 	if not is_instance_valid(player):
 		specials_label.text = ""
 		return
-	var lines := PackedStringArray(["Especiais (%s com a receita na fila):" % Keybinds.action_text("cast_special")])
-	for id in Specials.ORDER:
-		var left: float = player.special_cooldowns.get(id, 0.0)
-		var state := "pronto" if left <= 0.0 else "%ds" % ceili(left)
-		lines.append("%s  [%s]  %s" % [Specials.SPECIALS[id].label, _recipe_keys[id], state])
-	specials_label.text = "\n".join(lines)
+	var id := Ultimates.resolve(player.queue_view)
+	var key := Keybinds.action_text("skill_r")
+	if id.is_empty():
+		specials_label.text = "Ultimate (%s): carregue elementos" % key
+	else:
+		specials_label.text = "Ultimate (%s): %s\n%s" % [key, Ultimates.label(id), Ultimates.ULTIMATES[id].description]
 
 
 func _update_wave() -> void:
@@ -241,7 +228,7 @@ func _update_wave() -> void:
 		wave_label.text = "Onda %d/%d" % [game_state.wave, total]
 		banner.text = "DERROTA...\n%s" % restart_hint
 	if banner.text.is_empty() and is_instance_valid(player) and player.health.dead:
-		banner.text = "Você caiu!\nUm aliado pode te reviver com Vida."
+		banner.text = "Você caiu!\nUm aliado pode te levantar com o W."
 
 
 # --- Fila e legenda dos elementos (embaixo, no centro) -----------------------
@@ -282,26 +269,97 @@ func _bottom_row(top: float, bottom: float) -> HBoxContainer:
 	return row
 
 
+# Skills Q W E R: nome, tecla, custo; escurece em recarga e azula sem mana.
+func _build_skill_row() -> void:
+	var row := _bottom_row(-236, -168)
+	for slot in Classes.SLOTS:
+		_skill_icons[slot] = _icon(row, Vector2(96, 68), 14)
+
+
+func _build_mana_bar() -> void:
+	mana_bar = ProgressBar.new()
+	mana_bar.show_percentage = false
+	mana_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	mana_bar.offset_left = -200
+	mana_bar.offset_right = 200
+	mana_bar.offset_top = -162
+	mana_bar.offset_bottom = -144
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.25, 0.45, 1.0)
+	fill.set_corner_radius_all(4)
+	mana_bar.add_theme_stylebox_override("fill", fill)
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0.05, 0.05, 0.1, 0.8)
+	back.set_corner_radius_all(4)
+	mana_bar.add_theme_stylebox_override("background", back)
+	add_child(mana_bar)
+	mana_label = Label.new()
+	mana_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	mana_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mana_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	mana_label.add_theme_font_size_override("font_size", 13)
+	mana_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	mana_label.add_theme_constant_override("outline_size", 4)
+	mana_bar.add_child(mana_label)
+
+
+# Carga: 3 espaços redondos com os elementos carregados.
 func _build_queue_row() -> void:
-	var row := _bottom_row(-178, -118)
-	for i in 5:
-		_slots.append(_icon(row, Vector2(60, 60), 16))
+	var row := _bottom_row(-138, -86)
+	for i in 3:
+		_slots.append(_icon(row, Vector2(52, 52), 14))
 
 
-# Legenda: tecla de cada elemento na cor dele.
+# Legenda: tecla D F G com o elemento escolhido, na cor dele.
 func _build_legend_row() -> void:
-	var row := _bottom_row(-108, -78)
-	for element in ELEMENT_ACTION_IDS:
-		var icon := _icon(row, Vector2(62, 30), 14)
-		icon[0].add_theme_stylebox_override("panel", _slot_style(E.COLORS[element], true, 8))
-		icon[1].text = "%s %s" % [Keybinds.action_text(ELEMENT_ACTION_IDS[element]), SHORT_NAMES[element]]
+	var row := _bottom_row(-80, -50)
+	for i in CHARGE_ACTIONS.size():
+		_legend.append(_icon(row, Vector2(92, 30), 14))
+
+
+func _update_skills() -> void:
+	if not is_instance_valid(player):
+		return
+	if player.elements != _legend_shown:
+		_legend_shown = player.elements.duplicate()
+		for i in _legend.size():
+			var element: int = player.elements[i]
+			_legend[i][0].add_theme_stylebox_override("panel", _slot_style(E.COLORS[element], true, 8))
+			_legend[i][1].text = "%s %s" % [Keybinds.action_text(CHARGE_ACTIONS[i]), SHORT_NAMES[element]]
+	mana_bar.max_value = maxf(player.max_mana, 1.0)
+	mana_bar.value = player.mana
+	mana_label.text = "Mana %d/%d" % [floori(player.mana), roundi(player.max_mana)]
+	for slot in _skill_icons:
+		var skill: Dictionary = player.cls.skills[slot]
+		var left: float = player.skill_cooldowns.get(slot, 0.0)
+		var color := READY_COLOR
+		var state := "%d mana" % roundi(skill.cost)
+		if left > 0.0:
+			color = COOLDOWN_COLOR
+			state = "%.1fs" % left if left < 10.0 else "%ds" % ceili(left)
+		elif player.mana < skill.cost:
+			color = NO_MANA_COLOR
+			state = "sem mana"
+		var skill_name: String = skill.label
+		if slot == "r":
+			var id := Ultimates.resolve(player.queue_view)
+			skill_name = Ultimates.label(id) if not id.is_empty() else "Ultimate"
+		var text := "%s  %s\n%s" % [Keybinds.action_text(SKILL_ACTIONS[slot]), skill_name, state]
+		var panel: PanelContainer = _skill_icons[slot][0]
+		var key := "%s|%s" % [text, color]
+		if panel.get_meta("shown", "") == key:
+			continue
+		panel.set_meta("shown", key)
+		panel.add_theme_stylebox_override("panel", _slot_style(color, left <= 0.0, 10))
+		_skill_icons[slot][1].text = text
 
 
 const ELEMENT_SOUNDS := {
 	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
 	E.Type.COLD: "element_cold", E.Type.LIGHTNING: "element_lightning", E.Type.ARCANE: "element_arcane",
 	E.Type.EARTH: "element_earth", E.Type.FIRE: "element_fire", E.Type.STEAM: "element_water",
-	E.Type.ICE: "element_cold",
+	E.Type.ICE: "element_cold", E.Type.VOID: "element_void", E.Type.GRAVITY: "element_gravity",
+	E.Type.SMOKE: "element_smoke",
 }
 var _last_queue: Array = []
 
@@ -331,10 +389,10 @@ func _update_queue_row() -> void:
 func _help_text() -> String:
 	var k := func(id): return Keybinds.action_text(id)
 	var lines := PackedStringArray([
-		"Andar: %s no chão | Lançar: monte a combinação e espere 1 s (mira no mouse) | Golpe: %s" % [
-			k.call("move_to_cursor"), k.call("cast_weapon")],
-		"Área: %s | Em si mesmo: %s | Especial: %s | Habilidade: %s | Esc: sair para o lobby" % [
-			k.call("cast_area"), k.call("cast_self"), k.call("cast_special"), k.call("class_ability")],
+		"Andar: %s no chão | Golpe: %s | Carregar elementos: %s %s %s (até 3, a próxima skill usa)" % [
+			k.call("move_to_cursor"), k.call("cast_weapon"), k.call("charge_1"), k.call("charge_2"), k.call("charge_3")],
+		"Skills: %s %s %s %s (W: no aliado ou inimigo sob o mouse; R depende da carga) | Esc: sair para o lobby" % [
+			k.call("skill_q"), k.call("skill_w"), k.call("skill_e"), k.call("skill_r")],
 	])
 	return "\n".join(lines)
 

@@ -1,14 +1,18 @@
-# Personagem jogável (Mago, Assassino ou Lutador — ver scripts/core/classes.gd). Em rede:
+# Personagem jogável (Mago, Assassino ou Lutador — ver scripts/core/classes.gd).
+# Cada jogador escolhe 3 elementos antes da partida (D F G). Eles formam uma carga
+# de até 3 que a próxima skill (Q W E R) usa e consome. Skills gastam mana e têm recarga.
+# Em rede:
 # - o dono (peer_id) controla movimento e mira, sincronizados para todos;
-# - teclas de elemento e lançamentos viram pedidos (RPC) para o host;
-# - o host roda a fila, os feitiços e o dano, e sincroniza vida/fila/efeitos para todos.
+# - teclas de elemento e de skill viram pedidos (RPC) para o host;
+# - o host roda a carga, as skills e o dano, e sincroniza vida/carga/mana/efeitos.
 extends CharacterBody3D
 
 const E = preload("res://scripts/core/elements.gd")
 const ElementQueue = preload("res://scripts/core/element_queue.gd")
 const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
-const Specials = preload("res://scripts/core/specials.gd")
+const Ultimates = preload("res://scripts/core/ultimates.gd")
 const Classes = preload("res://scripts/core/classes.gd")
+const Loadout = preload("res://scripts/core/loadout.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
@@ -24,75 +28,67 @@ const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
 const MELEE_ANIMS := {
 	"mage": "1H_Melee_Attack_Chop", "assassin": "Dualwield_Melee_Attack_Stab", "fighter": "2H_Melee_Attack_Chop",
 }
-const ABILITY_ANIMS := {
-	"arcane_shield": "Spellcast_Raise", "shadow_step": "Dodge_Forward", "charge": "2H_Melee_Attack_Spin",
+# Animação de cada skill.
+const SKILL_ANIMS := {
+	"orb": "Spellcast_Shoot", "bless_curse": "Spellcast_Raise", "laser": "Spellcast_Long",
+	"dagger": "Throw", "veil_mark": "Spellcast_Raise", "shadow_step": "Dodge_Forward",
+	"whirl": "2H_Melee_Attack_Spin", "shout": "Spellcast_Raise", "charge": "2H_Melee_Attack_Spin",
+	"ultimate": "Spellcast_Long",
 }
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 
-enum CastMode { FORWARD, AREA, SELF }
-
 const GRAVITY := 20.0
-const CHANNEL_MAX := 3.0
-# Disparo automático: depois de 1 s sem novo elemento/habilidade, a fila é lançada
-# à frente (na direção do mouse). Spray, beam e arco duram AUTO_CHANNEL_TIME.
-const AUTO_CAST_DELAY := 1.0
-const AUTO_CHANNEL_TIME := 2.0
 # Andar clicando.
 const ARRIVE_DISTANCE := 0.3
 const STUCK_TIME := 0.4
-const SPRAY_RANGE := 5.0
-const SPRAY_ANGLE := 0.5236  # 30 graus
-const BEAM_RANGE := 20.0
-const ARC_RANGE := 8.0
-const ARC_CHAIN_RANGE := 4.0
-const ARC_MAX_TARGETS := 3
-const AREA_RADIUS := 4.0
 const PLAYER_COLORS := [Color(0.3, 0.35, 0.9), Color(0.25, 0.75, 0.35), Color(0.9, 0.55, 0.15), Color(0.65, 0.3, 0.85)]
 
-# Projétil carregado: segurar até CHARGE_TIME leva o poder de MIN a MAX.
-const CHARGE_TIME := 1.2
-const PROJECTILE_POWER := Vector2(0.6, 2.0)
-const PROJECTILE_SPEED := Vector2(14.0, 28.0)
-
-# Habilidades de classe (os números da arma ficam em classes.gd).
-const ARCANE_SHIELD_TIME := 4.0
-const ARCANE_SHIELD_RADIUS := 4.0
-const ARCANE_SHIELD_PUSH := 7.0
-const INVISIBLE_TIME := 3.0
+# Skills: alvo do W (unidade sob o mouse), mana e Investida.
+const HOVER_RADIUS := 1.5        # distância do cursor até a unidade
+const TARGET_RANGE := 10.0       # alcance do W
+const FOUNTAIN_MANA_MULT := 6.0  # regeneração de mana na fonte do MOBA
 const DASH_TIME := 0.35
-const DASH_SPEED := 20.0     # 20 m/s por 0,35 s = 7 m
-const DASH_DAMAGE := 30.0
-const DASH_PUSH := 10.0
+const DASH_SPEED := 20.0         # 20 m/s por 0,35 s = 7 m
 const DASH_HIT_RADIUS := 1.6
+const GRAVITY_PULL := 7.0        # puxão por Gravidade na carga
+const BLIND_FACTOR := 0.5        # cego (Fumaça): metade do dano
 
 # Empurrão.
 const PUSH_DECAY := 18.0
 const MAX_PUSH := 12.0
-const SPRAY_WATER_PUSH := 25.0  # por segundo, por Água na fila
-const AREA_WATER_PUSH := 6.0
 
-# Feitiços especiais.
-const ARENA_LIMIT := 18.5
+# Ultimates.
 const METEOR_RANGE := 14.0
-const TELEPORT_RANGE := 10.0
 const STORM_TIME := 5.0
 const STORM_INTERVAL := 0.5
 const STORM_RANGE := 14.0
 const FROST_RADIUS := 10.0
 const FROST_TIME := 3.5
+const QUAKE_RADIUS := 7.0
+const QUAKE_DAMAGE := 60.0
+const QUAKE_STUN := 1.5
+const CATACLYSM_RANGE := 14.0
+const CATACLYSM_RADIUS := 4.0
+const CATACLYSM_DAMAGE := 120.0
+const CATACLYSM_DELAY := 1.0
+const TIDE_RANGE := 9.0
+const TIDE_ANGLE := 0.8          # ~45 graus
+const TIDE_PUSH := 14.0
+const FORTRESS_RADIUS := 8.0
+const FORTRESS_SHIELD := 5.0
+const ECLIPSE_RADIUS := 9.0
+const ECLIPSE_DAMAGE := 30.0
+const SINGULARITY_RANGE := 14.0
+const SINGULARITY_RADIUS := 8.0
+const SINGULARITY_DAMAGE := 40.0
+const SINGULARITY_STUN := 1.0
+const SMOKESCREEN_RADIUS := 8.0
+const SMOKESCREEN_HIDE := 3.0
 
-# Ações configuráveis (ver scripts/ui/keybinds.gd) -> elemento.
-const ELEMENT_ACTIONS := {
-	"element_water": E.Type.WATER,
-	"element_life": E.Type.LIFE,
-	"element_shield": E.Type.SHIELD,
-	"element_cold": E.Type.COLD,
-	"element_lightning": E.Type.LIGHTNING,
-	"element_arcane": E.Type.ARCANE,
-	"element_earth": E.Type.EARTH,
-	"element_fire": E.Type.FIRE,
-}
+# Ações configuráveis (ver scripts/ui/keybinds.gd).
+const CHARGE_ACTIONS := ["charge_1", "charge_2", "charge_3"]
+const SKILL_ACTIONS := {"skill_q": "q", "skill_w": "w", "skill_e": "e", "skill_r": "r"}
 
 var peer_id := 1               # dono do personagem (bots: o host)
 var team := Combat.BLUE
@@ -101,6 +97,7 @@ var color_index := 0
 var power := 1.0               # multiplicador de dano (níveis, itens e bônus no MOBA)
 var class_id := Classes.DEFAULT
 var cls: Dictionary          # dados da classe (classes.gd)
+var elements: Array = []     # os 3 elementos escolhidos no lobby (D F G)
 var moba := false            # modo MOBA: ouro, níveis, loja e reaparecer na base
 
 # MOBA (decidido pelo host e sincronizado).
@@ -119,33 +116,37 @@ var aim_point := Vector3.ZERO
 var push_velocity := Vector3.ZERO   # empurrão, aplicado pelo dono no movimento
 
 # Estado decidido pelo host e sincronizado para todos (HUD e visual).
-var queue_view: Array = []
+var queue_view: Array = []        # carga atual (até 3 elementos)
 var fx_shape: int = SpellResolver.Shape.NONE
 var fx_element := 0
 var fx_elements: Array = []   # elementos do feitiço contínuo (para os efeitos visuais)
-var fx_length := 0.0   # comprimento do efeito; no projétil, a carga (0 a 1)
+var fx_length := 0.0   # comprimento do efeito (raio laser)
 var fx_width := 0.3
-var special_cooldowns := {}
-var ability_cooldown := 0.0
-var weapon_elements: Array = []   # elementos na arma (o Assassino guarda por 3 golpes)
-var weapon_charges := 0
-var invisible := 0.0              # Passo sombrio: os inimigos ignoram
-var auto_cast_timer := 0.0        # contagem até o disparo automático
+var mana := 0.0
+var max_mana := 0.0
+var skill_cooldowns := {}         # "q"/"w"/"e"/"r" -> segundos restantes
+var invisible := 0.0              # Véu/Passo sombrio: os inimigos ignoram
 
 # Só usados no host.
 var queue := ElementQueue.new()
 var channel_elements: Array = []
 var channel_shape: int = SpellResolver.Shape.NONE
 var channel_time := 0.0
-var channel_limit := CHANNEL_MAX
+var channel_limit := 0.0
+var channel_dps := 0.0
+var channel_range := 0.0
 var weapon_timer := 0.0
 var storm_time := 0.0
 var storm_tick := 0.0
+var storm_elements: Array = []
+var storm_scale := 1.0
 var dash_hit_time := 0.0      # Investida em andamento (host)
 var dash_direction := Vector3.ZERO
 var dash_elements: Array = []
+var dash_damage := 0.0
+var dash_push := 0.0
 var dash_hit: Array = []
-var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido de lançar
+var _cast_dir := Vector3.ZERO   # direção enviada pelo dono no pedido
 
 # Investida: o dono move o personagem (só no PC dele).
 var dash_velocity := Vector3.ZERO
@@ -167,6 +168,7 @@ func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("players")
 	cls = Classes.info(class_id)
+	elements = Loadout.sanitize(elements, class_id)
 	moba = Network.game_mode() == "moba"
 	_build_body()
 
@@ -177,10 +179,13 @@ func _ready() -> void:
 	# Arena: caído espera um aliado com Vida. MOBA: volta sozinho na base.
 	health.revivable = not moba
 	add_child(health)
+	max_mana = cls.mana
+	mana = max_mana
 	if multiplayer.is_server():
 		health.died.connect(_on_died)
 		if moba:
 			_recompute_stats()
+			mana = max_mana
 
 	add_child(SpellFx.new())
 	var status_fx := StatusFx.new()
@@ -193,11 +198,12 @@ func _ready() -> void:
 
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
-		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_elements", ".:fx_length", ".:fx_width", ".:special_cooldowns",
-		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible", ".:auto_cast_timer",
-		".:action_anim", ".:action_count",
+		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_elements", ".:fx_length", ".:fx_width",
+		".:mana", ".:max_mana", ".:skill_cooldowns", ".:invisible", ".:action_anim", ".:action_count",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements", "Health:max_hp",
+		"Health:stunned", "Health:slowed", "Health:slow_amount", "Health:hasted", "Health:haste_amount",
+		"Health:vulnerable", "Health:fortified", "Health:blinded",
 		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
 	])
 	set_multiplayer_authority(peer_id, false)
@@ -270,26 +276,36 @@ func is_local() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if is_bot or not is_local() or health.dead:
 		return
-	for action in ELEMENT_ACTIONS:
+	for slot in CHARGE_ACTIONS.size():
+		if event.is_action_pressed(CHARGE_ACTIONS[slot]):
+			request_charge.rpc_id(1, slot)
+			return
+	for action in SKILL_ACTIONS:
 		if event.is_action_pressed(action):
-			request_element.rpc_id(1, ELEMENT_ACTIONS[action])
+			request_skill.rpc_id(1, SKILL_ACTIONS[action], aim_point, hover_target_name())
 			return
 	if event.is_action_pressed("move_to_cursor"):
 		_show_move_marker(aim_point)
-	elif event.is_action_pressed("cast_area"):
-		request_cast.rpc_id(1, CastMode.AREA, true, _forward())
-	elif event.is_action_pressed("cast_self") or _is_middle_click(event):
-		request_cast.rpc_id(1, CastMode.SELF, true, _forward())
 	elif event.is_action_pressed("cast_weapon"):
-		request_weapon.rpc_id(1, _forward())
-	elif event.is_action_pressed("cast_special"):
-		request_special.rpc_id(1, aim_point)
-	elif event.is_action_pressed("class_ability"):
-		request_ability.rpc_id(1, _forward())
+		request_weapon.rpc_id(1, _forward_to(aim_point))
 
 
-func _is_middle_click(event: InputEvent) -> bool:
-	return event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed
+# Nome da unidade sob o mouse (alvo do W), ou "" se não houver nenhuma.
+# Aliados caídos contam (o W os levanta); estruturas não.
+func hover_target_name() -> String:
+	var best := ""
+	var best_distance := HOVER_RADIUS
+	for node in get_tree().get_nodes_in_group("damageable"):
+		if node.is_in_group("structures") or node.is_queued_for_deletion():
+			continue
+		if node.health.dead and not node.is_in_group("players"):
+			continue
+		var offset: Vector3 = node.global_position - aim_point
+		offset.y = 0.0
+		if offset.length() < best_distance:
+			best_distance = offset.length()
+			best = String(node.name)
+	return best
 
 
 func _physics_process(delta: float) -> void:
@@ -340,11 +356,7 @@ func _move_local(delta: float) -> void:
 		move_and_slide()
 		return
 
-	var speed: float = cls.speed + speed_bonus
-	if health.frozen > 0.0:
-		speed = 0.0
-	elif health.chilled > 0.0:
-		speed *= 0.5
+	var speed: float = (cls.speed + speed_bonus) * health.speed_factor()
 	if fx_shape != SpellResolver.Shape.NONE:
 		speed *= 0.4
 	direction = direction.normalized()
@@ -356,7 +368,7 @@ func _move_local(delta: float) -> void:
 	_check_stuck(delta, direction, speed)
 
 	var flat_aim := Vector3(aim_point.x, global_position.y, aim_point.z)
-	if health.frozen <= 0.0 and flat_aim.distance_to(global_position) > 0.1:
+	if not health.is_disabled() and flat_aim.distance_to(global_position) > 0.1:
 		look_at(flat_aim, Vector3.UP)
 
 
@@ -450,38 +462,13 @@ func _add_push(impulse: Vector3) -> void:
 
 # --- Pedidos ao host ---------------------------------------------------------
 
+# Soma o elemento do slot (0 = D, 1 = F, 2 = G) na carga.
 @rpc("any_peer", "call_local", "reliable")
-func request_element(element: int) -> void:
-	if not _from_owner():
+func request_charge(slot: int) -> void:
+	if not _from_owner() or slot < 0 or slot >= elements.size():
 		return
-	# Um elemento novo interrompe spray/beam/arco e começa outra combinação.
-	if _is_channeling():
-		_cancel_channel()
-	queue.add(element)
+	queue.add(elements[slot])
 	_publish_queue()
-	auto_cast_timer = AUTO_CAST_DELAY if not queue.is_empty() else 0.0
-
-
-@rpc("any_peer", "call_local", "reliable")
-func request_cast(mode: int, pressed: bool, aim: Vector3) -> void:
-	if not multiplayer.is_server() or _sender() != peer_id:
-		return
-	# Soltar o botão sempre encerra o feitiço, mesmo se o mago caiu ou congelou.
-	if not pressed:
-		_set_cast_dir(aim)
-		_stop_channel()
-		_cast_dir = Vector3.ZERO
-		return
-	if not _from_owner():
-		return
-	_set_cast_dir(aim)
-	if mode == CastMode.FORWARD:
-		_cast_forward()
-	elif mode == CastMode.AREA:
-		_cast_area()
-	elif mode == CastMode.SELF:
-		_cast_self()
-	_cast_dir = Vector3.ZERO
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -493,40 +480,45 @@ func request_weapon(aim: Vector3) -> void:
 	_cast_dir = Vector3.ZERO
 
 
+# Usa a skill do slot ("q", "w", "e", "r") mirando em `aim_point` (chão sob o mouse).
+# `target_name`: unidade sob o mouse (para o W). Gasta mana, entra em recarga e consome a carga.
 @rpc("any_peer", "call_local", "reliable")
-func request_ability(aim: Vector3) -> void:
-	if not _from_owner() or _is_channeling() or ability_cooldown > 0.0:
+func request_skill(slot: String, aim_point_seen: Vector3, target_name: String) -> void:
+	if not _from_owner() or _is_channeling():
 		return
-	_set_cast_dir(aim)
-	var used := true
-	if cls.ability == "arcane_shield":
-		_ability_arcane_shield()
-	elif cls.ability == "shadow_step":
-		used = _ability_shadow_step()
-	elif cls.ability == "charge":
-		_ability_charge()
-	if used:
-		_act(ABILITY_ANIMS.get(cls.ability, "Spellcast_Raise"))
-		ability_cooldown = cls.ability_cooldown * cooldown_mult
-		# Usar uma habilidade também reinicia a espera do disparo automático.
-		if not queue.is_empty():
-			auto_cast_timer = AUTO_CAST_DELAY
+	var skill := Classes.skill(class_id, slot)
+	if skill.is_empty() or skill_cooldowns.get(slot, 0.0) > 0.0 or mana < skill.cost:
+		return
+	var charge := queue.elements.duplicate()
+	if slot == "r" and charge.is_empty():
+		return
+	_set_cast_dir(_forward_to(aim_point_seen))
+	var target := _skill_target(target_name)
+	invisible = 0.0   # agir revela (o Véu em si mesmo volta a esconder)
+	if not _use_skill(skill, charge, aim_point_seen, target):
+		_cast_dir = Vector3.ZERO
+		return
+	mana -= skill.cost
+	var cooldowns := skill_cooldowns.duplicate()
+	cooldowns[slot] = skill.cooldown * cooldown_mult
+	skill_cooldowns = cooldowns
+	_clear_queue()
+	_act(SKILL_ANIMS.get(skill.id, "Spellcast_Raise"))
 	_cast_dir = Vector3.ZERO
 
 
-@rpc("any_peer", "call_local", "reliable")
-func request_special(target_point: Vector3) -> void:
-	if not _from_owner() or _is_channeling():
-		return
-	var id := Specials.match_special(queue.elements)
-	if id.is_empty() or special_cooldowns.get(id, 0.0) > 0.0:
-		return
-	if _cast_special(id, target_point):
-		_act("Spellcast_Long")
-		var cooldowns := special_cooldowns.duplicate()
-		cooldowns[id] = Specials.SPECIALS[id].cooldown * cls.special_cooldown * cooldown_mult
-		special_cooldowns = cooldowns
-		_clear_queue()
+# Alvo do W conferido no host: perto do personagem e (se não for jogador) vivo.
+func _skill_target(target_name: String) -> Node3D:
+	if target_name.is_empty():
+		return null
+	var node := get_parent().get_node_or_null(target_name) as Node3D
+	if node == null or not node.is_in_group("damageable") or node.is_in_group("structures"):
+		return null
+	if node.global_position.distance_to(global_position) > TARGET_RANGE:
+		return null
+	if node.health.dead and not node.is_in_group("players"):
+		return null
+	return node
 
 
 func _sender() -> int:
@@ -536,7 +528,7 @@ func _sender() -> int:
 
 # O host só aceita pedidos do dono deste mago, e só se ele puder agir.
 func _from_owner() -> bool:
-	if not multiplayer.is_server() or health.dead or health.frozen > 0.0:
+	if not multiplayer.is_server() or health.dead or health.is_disabled():
 		return false
 	return _sender() == peer_id
 
@@ -552,7 +544,7 @@ func _publish_queue() -> void:
 	queue_view = queue.elements.duplicate()
 
 
-# --- Modos de lançar (host) --------------------------------------------------
+# --- Direção (host) ----------------------------------------------------------
 
 func _forward() -> Vector3:
 	if _cast_dir != Vector3.ZERO:
@@ -560,116 +552,32 @@ func _forward() -> Vector3:
 	return -global_transform.basis.z
 
 
+# Direção do personagem até um ponto no chão.
+func _forward_to(point: Vector3) -> Vector3:
+	var offset := point - global_position
+	offset.y = 0.0
+	return offset.normalized() if offset.length() > 0.1 else -global_transform.basis.z
+
+
 func _is_channeling() -> bool:
 	return channel_shape != SpellResolver.Shape.NONE
-
-
-func _cast_forward() -> void:
-	if queue.is_empty() or _is_channeling():
-		return
-	invisible = 0.0   # atacar revela o Assassino
-	var elements := queue.elements.duplicate()
-	var shape := SpellResolver.resolve_shape(elements)
-	if shape == SpellResolver.Shape.BARRIER:
-		_spawn_barrier(global_position + _forward() * 2.5, elements)
-		_clear_queue()
-		return
-	# Projétil carrega enquanto o botão estiver pressionado; spray, beam e arco
-	# ficam ativos enquanto ele estiver pressionado.
-	channel_elements = elements
-	channel_shape = shape
-	channel_time = 0.0
-	channel_limit = CHANNEL_MAX
-	fx_shape = shape
-	fx_element = elements[0]
-	fx_elements = elements
-	fx_length = 0.0
-
-
-func _cast_area() -> void:
-	if queue.is_empty() or _is_channeling():
-		return
-	var elements := queue.elements.duplicate()
-	_clear_queue()
-	invisible = 0.0
-	if E.Type.SHIELD in elements:
-		for i in 8:
-			var angle := TAU * i / 8.0
-			_spawn_barrier(global_position + Vector3(cos(angle), 0.0, sin(angle)) * 3.0, elements)
-		return
-	var water := elements.count(E.Type.WATER)
-	for target in _damageables():
-		var offset: Vector3 = target.global_position - global_position
-		offset.y = 0.0
-		if offset.length() <= AREA_RADIUS:
-			_hit(target, elements, 1.0)
-			if water > 0 and offset.length() > 0.01:
-				_push(target, offset.normalized() * AREA_WATER_PUSH * water)
-	show_flash.rpc(global_position, AREA_RADIUS, elements[0])
-	_act("Spellcast_Raise")
-
-
-func _cast_self() -> void:
-	if queue.is_empty() or _is_channeling():
-		return
-	var elements := queue.elements.duplicate()
-	_clear_queue()
-	if E.Type.SHIELD in elements:
-		# Escudo sozinho reduz o dano; com outros elementos, protege contra eles.
-		var others := elements.filter(func(element): return element != E.Type.SHIELD)
-		if others.is_empty():
-			health.shielded = Health.SELF_SHIELD_TIME
-		else:
-			health.set_ward(others)
-		return
-	health.apply_elements(elements, 1.0)
-	_act("Use_Item")
 
 
 func _clear_queue() -> void:
 	queue.clear()
 	_publish_queue()
-	auto_cast_timer = 0.0
 
 
-# Disparo automático (host): a fila vai à frente, na direção em que o
-# personagem está virado (que segue o mouse do dono).
-func _update_auto_cast(delta: float) -> void:
-	if auto_cast_timer <= 0.0:
-		return
-	auto_cast_timer -= delta
-	if auto_cast_timer > 0.0:
-		return
-	auto_cast_timer = 0.0
-	if queue.is_empty() or _is_channeling() or health.dead:
-		return
-	if health.frozen > 0.0:
-		auto_cast_timer = 0.1   # tenta de novo quando descongelar
-		return
-	var elements := queue.elements.duplicate()
-	if SpellResolver.resolve_shape(elements) == SpellResolver.Shape.PROJECTILE:
-		# A espera conta como carga: o projétil sai com força total.
-		invisible = 0.0
-		_fire_projectile(elements, 1.0)
-		_clear_queue()
-		return
-	_cast_forward()
-	channel_limit = AUTO_CHANNEL_TIME
+# Elemento para a cor dos efeitos: o 1º da carga, ou `fallback` sem carga.
+func _look(charge: Array, fallback: int) -> int:
+	return charge[0] if not charge.is_empty() else fallback
 
 
-# Golpe em cone à frente, com os números da arma da classe. Elementos na fila
-# (menos Escudo) vão para a arma e valem por `charges` golpes. Pelas costas
-# (ou saindo da invisibilidade) o dano é multiplicado por `backstab`.
+# Golpe básico em cone à frente, com os números da arma da classe. Não usa a carga.
+# Pelas costas (ou saindo da invisibilidade) o dano é multiplicado por `backstab`.
 func _swing_weapon() -> void:
 	var weapon: Dictionary = cls.weapon
 	weapon_timer = weapon.cooldown
-	if not queue.is_empty():
-		var imbue := queue.elements.filter(func(element): return element != E.Type.SHIELD)
-		_clear_queue()
-		if not imbue.is_empty():
-			weapon_elements = imbue
-			weapon_charges = weapon.charges
-	var elements: Array = weapon_elements if weapon_charges > 0 else []
 	var from_shadows := invisible > 0.0
 	for target in _damageables():
 		var offset: Vector3 = target.global_position - global_position
@@ -678,23 +586,17 @@ func _swing_weapon() -> void:
 			continue
 		if _forward().angle_to(offset.normalized()) >= weapon.angle:
 			continue
-		var bonus := 1.0
 		if not Combat.can_harm(team, target):
 			continue
+		var bonus := 1.0
 		if from_shadows or _is_behind(target, offset):
 			bonus = cls.backstab
 		var target_health = target.get_node_or_null("Health")
 		if target_health != null:
-			target_health.damage(weapon.damage * bonus * power)
-			if not elements.is_empty():
-				target_health.apply_elements(elements, weapon.element_scale * bonus)
+			target_health.damage(weapon.damage * bonus * _might())
 		_push(target, _forward() * weapon.push)
-	if weapon_charges > 0:
-		weapon_charges -= 1
-		if weapon_charges == 0:
-			weapon_elements = []
 	invisible = 0.0
-	show_swing.rpc(elements[0] if not elements.is_empty() else -1, _forward(), weapon.range)
+	show_swing.rpc(-1, _forward(), weapon.range)
 	_act(MELEE_ANIMS.get(class_id, "1H_Melee_Attack_Chop"))
 
 
@@ -705,39 +607,125 @@ func _is_behind(target: Node3D, offset: Vector3) -> bool:
 	return facing.normalized().dot(offset.normalized()) > 0.5
 
 
-# --- Habilidades de classe (host) --------------------------------------------
+# --- Skills (host) ----------------------------------------------------------
+# Cada uma devolve false se não deu para usar (aí não gasta mana nem recarga).
 
-func _ability_arcane_shield() -> void:
-	health.shielded = maxf(health.shielded, ARCANE_SHIELD_TIME)
-	for target in _damageables():
-		var offset: Vector3 = target.global_position - global_position
-		offset.y = 0.0
-		if offset.length() <= ARCANE_SHIELD_RADIUS and offset.length() > 0.01:
-			_push(target, offset.normalized() * ARCANE_SHIELD_PUSH)
-	show_flash.rpc(global_position, ARCANE_SHIELD_RADIUS, E.Type.SHIELD)
+func _use_skill(skill: Dictionary, charge: Array, point: Vector3, target: Node3D) -> bool:
+	match skill.id:
+		"orb":
+			_fire_projectile(charge, skill.damage, skill.speed, "orb", 1.0)
+		"dagger":
+			_fire_projectile(charge, skill.damage, skill.speed, "dagger", cls.backstab)
+		"laser":
+			_start_laser(skill, charge)
+		"bless_curse", "veil_mark", "shout":
+			_support_skill(skill, charge, target)
+		"shadow_step":
+			return _shadow_step(skill, charge)
+		"whirl":
+			_whirl(skill, charge)
+		"charge":
+			_dash(skill, charge)
+		"ultimate":
+			return _cast_ultimate(Ultimates.resolve(charge), charge, point, skill.power)
+	return true
 
 
-# Avança até 6 m (ou o mais longe que estiver livre) e fica invisível.
-func _ability_shadow_step() -> bool:
-	for distance in [6.0, 5.0, 4.0, 3.0, 2.0]:
+# Dano direto da skill (só em quem pode ser ferido) + os elementos da carga.
+func _strike(target: Node, damage: float, charge: Array, scale := 1.0) -> void:
+	var target_health = target.get_node_or_null("Health")
+	if target_health == null:
+		return
+	if damage > 0.0 and Combat.can_harm(team, target):
+		target_health.damage(damage * cls.spell_power * _might() * scale)
+	_hit(target, charge, scale)
+
+
+func _is_enemy(node: Node) -> bool:
+	return Combat.is_hostile(team, Combat.team_of(node))
+
+
+# W: no inimigo sob o mouse, enfraquece; em aliado (ou em si mesmo), fortalece.
+# Aliado caído: o W o levanta (Arena).
+func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
+	if target != null and _is_enemy(target):
+		var target_health: Health = target.health
+		_hit(target, charge, 1.0)
+		if skill.has("slow"):
+			target_health.slow(skill.slow, skill.duration)
+		if skill.has("vulnerable"):
+			target_health.make_vulnerable(skill.vulnerable, skill.duration)
+		show_flash.rpc(target.global_position, 1.3, _look(charge, E.Type.ARCANE))
+		return
+	var ally: Node3D = target if target != null else self
+	var ally_health: Health = ally.health
+	if ally_health.dead:
+		ally_health.revive()
+	ally_health.heal(skill.get("heal", 0.0) * power)
+	if not charge.is_empty():
+		ally_health.set_ward(charge)
+	if skill.id == "veil_mark" and ally.get("invisible") != null:
+		ally.invisible = skill.invisible
+	if skill.id == "shout":
+		ally_health.haste(skill.haste, skill.duration)
+		ally_health.fortify(skill.fortify, skill.duration)
+	show_flash.rpc(ally.global_position, 1.3, _look(charge, E.Type.LIFE))
+
+
+func _start_laser(skill: Dictionary, charge: Array) -> void:
+	channel_elements = charge
+	channel_shape = SpellResolver.Shape.BEAM
+	channel_time = 0.0
+	channel_limit = skill.duration
+	channel_dps = skill.dps
+	channel_range = skill.range
+	var look := charge if not charge.is_empty() else [E.Type.ARCANE]
+	fx_shape = SpellResolver.Shape.BEAM
+	fx_element = look[0]
+	fx_elements = look
+	fx_length = 0.0
+
+
+# Salta até `distance` m para o mouse (ou o mais longe que estiver livre) e
+# solta a carga numa área pequena onde cai.
+func _shadow_step(skill: Dictionary, charge: Array) -> bool:
+	var steps := 5
+	for i in steps:
+		var distance: float = skill.distance * (1.0 - 0.15 * i)
 		var destination := _clamp_target(global_position + _forward() * distance, distance)
-		if _is_free_spot(destination):
-			show_flash.rpc(global_position, 1.0, E.Type.ARCANE)
-			do_teleport.rpc_id(peer_id, destination)
-			invisible = INVISIBLE_TIME
-			return true
+		if not _is_free_spot(destination):
+			continue
+		show_flash.rpc(global_position, 1.0, E.Type.ARCANE)
+		do_teleport.rpc_id(peer_id, destination)
+		for target in _damageables():
+			if target.global_position.distance_to(destination) <= skill.radius and _is_enemy(target):
+				_strike(target, skill.damage, charge)
+		show_flash.rpc(destination, skill.radius, _look(charge, E.Type.ARCANE))
+		return true
 	return false
 
 
-# Corre para a frente; quem estiver no caminho leva dano, os elementos da fila e um empurrão.
-func _ability_charge() -> void:
+# Golpe giratório: todos ao redor levam dano, a carga e um empurrão.
+func _whirl(skill: Dictionary, charge: Array) -> void:
+	for target in _damageables():
+		var offset: Vector3 = target.global_position - global_position
+		offset.y = 0.0
+		if offset.length() > skill.radius:
+			continue
+		_strike(target, skill.damage, charge)
+		if offset.length() > 0.01:
+			_push(target, offset.normalized() * skill.push)
+	show_flash.rpc(global_position, skill.radius, _look(charge, E.Type.EARTH))
+
+
+# Investida: corre para a frente; quem estiver no caminho leva dano, a carga e um empurrão.
+func _dash(skill: Dictionary, charge: Array) -> void:
 	dash_direction = _forward()
 	dash_hit_time = DASH_TIME + 0.1   # folga para a posição sincronizada alcançar
 	dash_hit = []
-	dash_elements = queue.elements.filter(func(element): return element != E.Type.SHIELD)
-	if not queue.is_empty():
-		_clear_queue()
-	invisible = 0.0
+	dash_elements = charge
+	dash_damage = skill.damage
+	dash_push = skill.push
 	do_dash.rpc_id(peer_id, dash_direction * DASH_SPEED, DASH_TIME)
 
 
@@ -751,14 +739,10 @@ func _update_dash_hits(delta: float) -> void:
 		if not Combat.can_harm(team, target):
 			continue
 		dash_hit.append(target)
-		var target_health = target.get_node_or_null("Health")
-		if target_health != null:
-			target_health.damage(DASH_DAMAGE * power)
-			if not dash_elements.is_empty():
-				target_health.apply_elements(dash_elements, 1.0)
+		_strike(target, dash_damage, dash_elements)
 		var away: Vector3 = target.global_position - global_position
 		away.y = 0.0
-		_push(target, (dash_direction + away.normalized() * 0.5).normalized() * DASH_PUSH)
+		_push(target, (dash_direction + away.normalized() * 0.5).normalized() * dash_push)
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -775,77 +759,55 @@ func _update_host(delta: float) -> void:
 	if moba:
 		_update_moba(delta)
 	weapon_timer = maxf(weapon_timer - delta, 0.0)
-	ability_cooldown = maxf(ability_cooldown - delta, 0.0)
 	invisible = maxf(invisible - delta, 0.0)
+	_update_mana(delta)
 	_update_dash_hits(delta)
-	_update_auto_cast(delta)
 	_update_cooldowns(delta)
 	_update_storm(delta)
 	if _is_channeling():
-		if health.frozen > 0.0:
+		if health.is_disabled():
 			_stop_channel()
 		else:
 			_update_channel(delta)
 
 
+func _update_mana(delta: float) -> void:
+	if health.dead or mana >= max_mana:
+		return
+	var regen: float = cls.mana_regen
+	if moba and is_at_shop():
+		regen *= FOUNTAIN_MANA_MULT
+	mana = minf(mana + regen * delta, max_mana)
+
+
 func _update_cooldowns(delta: float) -> void:
-	if special_cooldowns.is_empty():
+	if skill_cooldowns.is_empty():
 		return
 	var cooldowns := {}
-	for id in special_cooldowns:
-		var left: float = special_cooldowns[id] - delta
+	for slot in skill_cooldowns:
+		var left: float = skill_cooldowns[slot] - delta
 		if left > 0.0:
-			cooldowns[id] = left
-	special_cooldowns = cooldowns
+			cooldowns[slot] = left
+	skill_cooldowns = cooldowns
 
 
+# Raio laser: dano por segundo no primeiro alvo da linha, com a carga.
 func _update_channel(delta: float) -> void:
 	channel_time += delta
 	if channel_time >= channel_limit:
 		_stop_channel()
 		return
-
-	var length := 0.0
-	var width := 0.3
-	if channel_shape == SpellResolver.Shape.PROJECTILE:
-		length = clampf(channel_time / CHARGE_TIME, 0.0, 1.0)
-	elif channel_shape == SpellResolver.Shape.SPRAY:
-		length = SPRAY_RANGE
-		width = 2.0
-		var water := channel_elements.count(E.Type.WATER)
-		for target in _damageables():
-			var offset: Vector3 = target.global_position - global_position
-			offset.y = 0.0
-			if offset.length() > 0.01 and offset.length() <= SPRAY_RANGE \
-					and _forward().angle_to(offset.normalized()) < SPRAY_ANGLE:
-				_hit(target, channel_elements, delta)
-				if water > 0:
-					_push(target, offset.normalized() * SPRAY_WATER_PUSH * water * delta)
-	elif channel_shape == SpellResolver.Shape.BEAM:
-		var origin := global_position + Vector3.UP
-		var result := _raycast(origin, origin + _forward() * BEAM_RANGE)
-		length = BEAM_RANGE
-		if not result.is_empty():
-			length = origin.distance_to(result.position)
-			_hit(result.collider, channel_elements, delta)
-	elif channel_shape == SpellResolver.Shape.ARC:
-		width = 0.1
-		var targets := _arc_targets()
-		for target in targets:
-			_hit(target, channel_elements, delta)
-		length = ARC_RANGE * 0.5
-		if not targets.is_empty():
-			length = global_position.distance_to(targets[0].global_position)
+	var origin := global_position + Vector3.UP
+	var result := _raycast(origin, origin + _forward() * channel_range)
+	var length := channel_range
+	if not result.is_empty():
+		length = origin.distance_to(result.position)
+		_strike(result.collider, channel_dps, channel_elements, delta)
 	fx_length = length
-	fx_width = width
+	fx_width = 0.3
 
 
-# Encerra o feitiço contínuo; o projétil carregado é disparado aqui.
 func _stop_channel() -> void:
-	if not _is_channeling():
-		return
-	if channel_shape == SpellResolver.Shape.PROJECTILE:
-		_fire_projectile(channel_elements, clampf(channel_time / CHARGE_TIME, 0.0, 1.0))
 	_cancel_channel()
 
 
@@ -854,79 +816,129 @@ func _cancel_channel() -> void:
 	channel_elements = []
 	fx_shape = SpellResolver.Shape.NONE
 	fx_elements = []
-	_clear_queue()
+	_cast_dir = Vector3.ZERO
 
 
-func _fire_projectile(elements: Array, charge: float) -> void:
-	_act("Spellcast_Shoot")
+func _fire_projectile(charge: Array, damage: float, speed: float, style: String, backstab: float) -> void:
 	get_parent().spawn_entity({
 		"type": "projectile",
 		"pos": global_position + Vector3.UP,
 		"dir": _forward(),
-		"elements": elements,
+		"elements": charge,
 		"caster": String(name),
 		"team": team,
-		"power": lerpf(PROJECTILE_POWER.x, PROJECTILE_POWER.y, charge) * cls.spell_power * power,
-		"speed": lerpf(PROJECTILE_SPEED.x, PROJECTILE_SPEED.y, charge),
+		"power": cls.spell_power * _might(),
+		"speed": speed,
+		"damage": damage,
+		"style": style,
+		"backstab": backstab,
 	})
 
 
-# Alvo mais próximo à frente, depois salta para até 2 alvos vizinhos.
-func _arc_targets() -> Array:
-	var targets: Array = []
-	var candidates := _damageables()
-	var current: Node3D = null
-	var best := ARC_RANGE
-	for target in candidates:
-		var offset: Vector3 = target.global_position - global_position
-		offset.y = 0.0
-		if offset.length() > 0.01 and offset.length() < best \
-				and _forward().angle_to(offset.normalized()) < deg_to_rad(60.0):
-			best = offset.length()
-			current = target
-	while current != null and targets.size() < ARC_MAX_TARGETS:
-		targets.append(current)
-		var next: Node3D = null
-		var next_best := ARC_CHAIN_RANGE
-		for target in candidates:
-			if target in targets:
-				continue
-			var distance: float = target.global_position.distance_to(current.global_position)
-			if distance < next_best:
-				next_best = distance
-				next = target
-		current = next
-	return targets
+# --- Ultimates (host) --------------------------------------------------------
+# O elemento dominante da carga decide qual sai (ultimates.gd); os outros
+# elementos vão junto como reforço. `scale`: força do ultimate na classe.
 
-
-# --- Feitiços especiais (host) -----------------------------------------------
-
-# Devolve false se não deu para lançar (ex.: teleporte para dentro de uma parede).
-func _cast_special(id: String, target_point: Vector3) -> bool:
-	if id == "meteor":
-		get_parent().spawn_entity({"type": "meteor", "team": team, "pos": _clamp_target(target_point, METEOR_RANGE)})
-	elif id == "teleport":
-		var destination := _clamp_target(target_point, TELEPORT_RANGE)
-		if not _is_free_spot(destination):
+func _cast_ultimate(id: String, charge: Array, point: Vector3, scale: float) -> bool:
+	var extra := charge.filter(func(element): return element != Ultimates.dominant(charge))
+	var strength := scale * _might()
+	match id:
+		"meteor":
+			get_parent().spawn_entity({"type": "meteor", "team": team, "pos": _clamp_target(point, METEOR_RANGE),
+				"extra": extra, "strength": strength})
+		"storm":
+			storm_time = STORM_TIME
+			storm_tick = 0.0
+			storm_elements = [E.Type.LIGHTNING, E.Type.LIGHTNING] + extra
+			storm_scale = strength
+		"frost":
+			for enemy in _hostile_units(FROST_RADIUS):
+				enemy.health.freeze(FROST_TIME)
+				_hit(enemy, extra, scale)
+			show_flash.rpc(global_position, FROST_RADIUS, E.Type.COLD)
+		"blessing":
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) != team:
+					continue
+				player.health.revive()
+				player.health.apply_elements([E.Type.LIFE, E.Type.LIFE], strength)
+				if not extra.is_empty():
+					player.health.set_ward(extra)
+				show_flash.rpc(player.global_position, 1.5, E.Type.LIFE)
+		"quake":
+			for enemy in _hostile_units(QUAKE_RADIUS):
+				_strike(enemy, QUAKE_DAMAGE, extra, scale)
+				enemy.health.stun(QUAKE_STUN)
+			show_flash.rpc(global_position, QUAKE_RADIUS, E.Type.EARTH)
+		"cataclysm":
+			var at := _clamp_target(point, CATACLYSM_RANGE)
+			show_flash.rpc(at, CATACLYSM_RADIUS * 0.5, E.Type.ARCANE)
+			get_tree().create_timer(CATACLYSM_DELAY).timeout.connect(_cataclysm.bind(at, extra, scale))
+		"tide":
+			for target in _damageables():
+				var offset: Vector3 = target.global_position - global_position
+				offset.y = 0.0
+				if offset.length() < 0.01 or offset.length() > TIDE_RANGE \
+						or _forward().angle_to(offset.normalized()) > TIDE_ANGLE:
+					continue
+				_strike(target, 0.0, [E.Type.WATER, E.Type.WATER] + extra, scale)
+				_push(target, offset.normalized() * TIDE_PUSH)
+			for step in 3:
+				show_flash.rpc(global_position + _forward() * (2.0 + 3.0 * step), 2.0 + step, E.Type.WATER)
+		"fortress":
+			for i in 8:
+				var angle := TAU * i / 8.0
+				_spawn_barrier(global_position + Vector3(cos(angle), 0.0, sin(angle)) * 3.0, [E.Type.SHIELD] + extra)
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) == team and not player.health.dead \
+						and player.global_position.distance_to(global_position) <= FORTRESS_RADIUS:
+					player.health.shielded = maxf(player.health.shielded, FORTRESS_SHIELD)
+		"eclipse":
+			for enemy in _hostile_units(ECLIPSE_RADIUS):
+				_strike(enemy, ECLIPSE_DAMAGE, [E.Type.VOID, E.Type.VOID] + extra, scale)
+			show_flash.rpc(global_position, ECLIPSE_RADIUS, E.Type.VOID)
+		"singularity":
+			_singularity(_clamp_target(point, SINGULARITY_RANGE), extra, scale)
+		"smokescreen":
+			for enemy in _hostile_units(SMOKESCREEN_RADIUS):
+				_hit(enemy, [E.Type.SMOKE] + extra, scale)
+			for player in get_tree().get_nodes_in_group("players"):
+				if Combat.team_of(player) == team and not player.health.dead 						and player.global_position.distance_to(global_position) <= SMOKESCREEN_RADIUS:
+					player.invisible = maxf(player.invisible, SMOKESCREEN_HIDE)
+			show_flash.rpc(global_position, SMOKESCREEN_RADIUS, E.Type.SMOKE)
+		_:
 			return false
-		show_flash.rpc(global_position, 1.2, E.Type.ARCANE)
-		show_flash.rpc(destination, 1.2, E.Type.ARCANE)
-		do_teleport.rpc_id(peer_id, destination)
-	elif id == "storm":
-		storm_time = STORM_TIME
-		storm_tick = 0.0
-	elif id == "frost":
-		for enemy in _hostile_units(FROST_RADIUS):
-			enemy.health.freeze(FROST_TIME)
-		show_flash.rpc(global_position, FROST_RADIUS, E.Type.COLD)
-	elif id == "blessing":
-		for player in get_tree().get_nodes_in_group("players"):
-			if Combat.team_of(player) != team:
-				continue
-			player.health.revive()
-			player.health.apply_elements([E.Type.LIFE, E.Type.LIFE], 1.0)
-			show_flash.rpc(player.global_position, 1.5, E.Type.LIFE)
 	return true
+
+
+# Singularidade: suga os inimigos perto de `at` para o centro, causa dano e atordoa.
+func _singularity(at: Vector3, extra: Array, scale: float) -> void:
+	for target in _damageables():
+		if not _is_enemy(target) or target.is_in_group("structures") or target.health.dead:
+			continue
+		var offset: Vector3 = at - target.global_position
+		offset.y = 0.0
+		if offset.length() > SINGULARITY_RADIUS:
+			continue
+		_strike(target, SINGULARITY_DAMAGE, extra, scale)
+		target.health.stun(SINGULARITY_STUN)
+		if offset.length() > 0.5:
+			_push(target, offset.normalized() * minf(offset.length() * 2.5, MAX_PUSH))
+	show_flash.rpc(at, SINGULARITY_RADIUS, E.Type.GRAVITY)
+
+
+# Explosão do Cataclismo (depois do atraso). O personagem pode ter caído ou saído.
+func _cataclysm(at: Vector3, extra: Array, scale: float) -> void:
+	if not is_inside_tree():
+		return
+	for target in _damageables():
+		var offset: Vector3 = target.global_position - at
+		offset.y = 0.0
+		if offset.length() <= CATACLYSM_RADIUS:
+			_strike(target, CATACLYSM_DAMAGE, extra, scale)
+			if offset.length() > 0.01:
+				_push(target, offset.normalized() * 8.0)
+	show_flash.rpc(at, CATACLYSM_RADIUS, E.Type.ARCANE)
 
 
 func _update_storm(delta: float) -> void:
@@ -941,18 +953,20 @@ func _update_storm(delta: float) -> void:
 	if targets.is_empty():
 		return
 	var target: Node3D = targets.pick_random()
-	target.health.apply_elements([E.Type.LIGHTNING, E.Type.LIGHTNING], 1.0)
+	target.health.apply_elements(storm_elements, storm_scale)
 	show_bolt.rpc(target.global_position)
 
 
-# Ponto no chão a no máximo `max_range` do mago, dentro da arena.
+# Ponto no chão a no máximo `max_range` do personagem, dentro do mapa.
 func _clamp_target(point: Vector3, max_range: float) -> Vector3:
 	var offset := point - global_position
 	offset.y = 0.0
 	if offset.length() > max_range:
 		offset = offset.normalized() * max_range
 	var target := global_position + offset
-	return Vector3(clampf(target.x, -ARENA_LIMIT, ARENA_LIMIT), 0.0, clampf(target.z, -ARENA_LIMIT, ARENA_LIMIT))
+	var half: Vector2 = get_parent().get("map_half") if get_parent().get("map_half") != null else Vector2(18.5, 18.5)
+	half -= Vector2(1.5, 1.5)
+	return Vector3(clampf(target.x, -half.x, half.x), 0.0, clampf(target.z, -half.y, half.y))
 
 
 func _is_free_spot(point: Vector3) -> bool:
@@ -1051,21 +1065,33 @@ func _damageables() -> Array:
 	return result
 
 
-# Unidades hostis vivas (sem estruturas) num raio, para Tempestade e Inverno.
+# Unidades hostis vivas (sem estruturas) num raio, para os ultimates.
 func _hostile_units(radius: float) -> Array:
 	return _damageables().filter(func(node): return Combat.is_hostile(team, Combat.team_of(node)) \
 		and not node.is_in_group("structures") and not node.health.dead \
 		and node.global_position.distance_to(global_position) <= radius)
 
 
-# Feitiços (spray, beam, arco, área): a força depende da classe.
+# Elementos da carga num alvo: a força depende da classe (aliados só recebem Vida).
 func _hit(target: Node, elements: Array, scale: float) -> void:
 	var target_health := target.get_node_or_null("Health")
 	if target_health == null:
 		return
 	elements = Combat.filter_elements(team, target, elements)
 	if not elements.is_empty():
-		target_health.apply_elements(elements, scale * cls.spell_power * power)
+		target_health.apply_elements(elements, scale * cls.spell_power * _might())
+	# Gravidade puxa o alvo para quem lançou (no laser, por segundo).
+	var gravity := elements.count(E.Type.GRAVITY)
+	if gravity > 0 and target != self and target is Node3D:
+		var toward: Vector3 = global_position - target.global_position
+		toward.y = 0.0
+		if toward.length() > 1.2:
+			_push(target, toward.normalized() * GRAVITY_PULL * gravity * minf(scale, 1.0))
+
+
+# Força de dano: nível/itens/bônus, pela metade se o personagem estiver cego (Fumaça).
+func _might() -> float:
+	return power * (BLIND_FACTOR if health.blinded > 0.0 else 1.0)
 
 
 func _push(target: Node, impulse: Vector3) -> void:
@@ -1140,6 +1166,8 @@ func _recompute_stats() -> void:
 	if not health.dead:
 		health.hp = clampf(health.hp + maxf(gained, 0.0), 0.0, health.max_hp)
 	health.armor = stats.armor
+	max_mana = stats.max_mana
+	mana = minf(mana, max_mana)
 	power = stats.power
 	speed_bonus = stats.speed
 	cooldown_mult = stats.cooldown
@@ -1168,6 +1196,7 @@ func _respawn() -> void:
 	health.reset()
 	_recompute_stats()
 	health.hp = health.max_hp
+	mana = max_mana
 	var spot := MobaMap.spawn_point(team, color_index)
 	do_teleport.rpc_id(peer_id, spot)
 
@@ -1176,6 +1205,7 @@ func _on_died() -> void:
 	if moba:
 		respawn_time = Progression.respawn_time(level)
 	_cancel_channel()
+	_clear_queue()
 	storm_time = 0.0
 	invisible = 0.0
 	dash_hit_time = 0.0

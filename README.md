@@ -10,7 +10,7 @@ Pelo editor:
 2. Abra o Godot → **Import** → selecione o arquivo `project.godot` desta pasta.
 3. Aperte **F5** para jogar.
 
-Controles padrão: **botão direito** no chão para andar, mira no mouse, elementos em **Q W E R / A S D F** e espere **1 s** para lançar. Eles aparecem no canto da tela e podem ser trocados em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
+Antes da partida, no lobby, cada um escolhe a **classe** e **3 elementos**. Controles padrão: **botão direito** no chão para andar, mira no mouse, **D F G** carregam os elementos (até 3) e **Q W E R** usam as skills da classe, que consomem a carga (o **R**, ultimate, muda conforme o elemento que mais aparece na carga). As skills gastam mana e têm recarga. As teclas aparecem na tela e podem ser trocadas em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
 ## Jogar com amigos no mesmo Wi-Fi
 1. Todos precisam do jogo no PC: mande o `Elementistas.exe` da raiz (todos com a mesma versão).
@@ -35,17 +35,12 @@ godot --headless --path . res://tests/net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/net_smoke.tscn -- --role=client
 ```
 
-Teste dos feitiços (carga, golpe, barreiras, proteção, congelar, especiais):
+Teste das skills (Q W E R das 3 classes, mana, recarga e os 11 ultimates):
 ```
-godot --headless --path . res://tests/spells_smoke.tscn
-```
-
-Teste das classes (Assassino, Lutador e Mago: atributos, arma, costas, habilidades):
-```
-godot --headless --path . res://tests/classes_smoke.tscn
+godot --headless --path . res://tests/skills_smoke.tscn
 ```
 
-Teste dos controles (disparo automático, andar clicando, setas):
+Teste dos controles (teclas D F G e Q W E R de verdade, andar clicando, setas):
 ```
 godot --headless --path . res://tests/controls_smoke.tscn
 ```
@@ -66,6 +61,7 @@ Capturas de tela para conferir o visual (abre uma janela por alguns segundos):
 ```
 godot --path . res://tests/screenshot.tscn -- --mode=arena --zoom=0.7 --out=C:/pasta/captura
 godot --path . res://tests/screenshot.tscn -- --mode=moba --out=C:/pasta/captura
+godot --path . res://tests/screenshot.tscn -- --mode=lobby --out=C:/pasta/captura
 ```
 
 Teste do áudio (abre uma janela: no modo headless o som fica mudo):
@@ -79,7 +75,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 Áudio: músicas CC0 do OpenGameArt (bojidar-bg, haeldb, cynicmusic, emmama), efeitos CC0 da **Kenney** (www.kenney.nl) e sons de feitiços/ambiente sintetizados pelo projeto. Detalhes em `assets/audio/CREDITOS.md`.
 
 ## Estrutura
-- `scripts/core/`: regras puras (elementos, fila, forma do feitiço, vida). Ficam fora da cena para serem testáveis e, na Fase 3, rodarem só no host.
+- `scripts/core/`: regras puras (elementos, carga, escolha de elementos, classes e skills, ultimates, vida). Ficam fora da cena para serem testáveis e rodarem só no host.
 - `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
 - `scripts/moba/`: modo MOBA: mapa, estruturas, tropas, estado da partida, ouro/níveis/loja e bots.
 - `scripts/vfx/`: visual: partículas dos elementos, efeitos de feitiços e estados, modelos animados das unidades e barras de vida.
@@ -95,6 +91,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - 🟡 Fase 3: co-op em LAN funcionando (lobby, descoberta, até 4 jogadores, host decide o dano).
 - ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
 - ✅ Classes: Mago, Assassino e Lutador, escolhidas no lobby.
+- ✅ Skills estilo MOBA: 3 elementos (entre 11, incluindo Vazio, Gravidade e Fumaça) escolhidos antes da partida (D F G), 4 skills por classe (Q W E R) com mana e recarga, 11 ultimates conforme a carga.
 - ✅ Modo MOBA 3v3: torres, inibidores, nexus, tropas, selva, Guardião, ouro, níveis, loja, reaparecer e bots.
 - ✅ Fase 5 (visual e som): partículas por elemento, céu e iluminação, personagens e esqueletos animados (KayKit), torres/castelo, árvores e montanhas, barras de vida, ícones dos elementos, minimapa, efeitos sonoros 3D, ambiente e música que muda em combate e perto do Guardião.
 - ⬜ Fase 6: polimento.
