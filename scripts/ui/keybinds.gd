@@ -23,6 +23,7 @@ const ACTIONS := [
 	{"id": "charge_3", "label": "Carregar 3º elemento", "default": ["key", KEY_G]},
 	{"id": "cast_weapon", "label": "Golpe básico", "default": ["mouse", MOUSE_BUTTON_LEFT]},
 	{"id": "shop", "label": "Abrir a loja (MOBA)", "default": ["key", KEY_B]},
+	{"id": "practice_panel", "label": "Mostrar/esconder o painel (Treino)", "default": ["key", KEY_TAB]},
 ]
 
 const MOUSE_NAMES := {

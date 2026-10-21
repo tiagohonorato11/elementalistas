@@ -49,6 +49,8 @@ func _watch_state() -> void:
 	var state: Node = main.game_state
 	if not is_instance_valid(state):
 		return
+	if main.mode == "practice":
+		return
 	if main.mode == "moba":
 		if state.winner != _winner:
 			_winner = state.winner

@@ -12,6 +12,8 @@ Pelo editor:
 
 Antes da partida, no lobby, cada um escolhe a **classe** e **3 elementos**. Controles padrão: **botão direito** no chão para andar, mira no mouse, **D F G** carregam os elementos (até 3) e **Q W E R** usam as skills da classe, que consomem a carga (o **R**, ultimate, é volátil: muda conforme a combinação da carga, e 3 iguais geram a versão MEGA). As skills gastam mana e têm recarga. As teclas aparecem na tela e podem ser trocadas em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
+Para testar skills, classes e elementos com calma, escolha o modo **Treino** no lobby: bonecos de teste com medidor de dano e um painel (tecla **Tab**) com mana infinita, sem recarga, imortal e troca de classe/elementos na hora.
+
 ## Jogar com amigos no mesmo Wi-Fi
 1. Todos precisam do jogo no PC: mande o `Elementistas.exe` da raiz (todos com a mesma versão).
 2. Quem hospeda clica em **Hospedar partida**. Na primeira vez, o Windows pergunta sobre o firewall: clique em **Permitir**, marcando também redes públicas se a sua rede estiver como "Pública".
@@ -52,6 +54,13 @@ godot --headless --path . res://tests/moba_net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/moba_net_smoke.tscn -- --role=client
 ```
 
+Testes do modo Treino (bonecos, painel, troca de classe; e o mesmo pela rede):
+```
+godot --headless --path . res://tests/practice_smoke.tscn
+godot --headless --path . res://tests/practice_net_smoke.tscn -- --role=host
+godot --headless --path . res://tests/practice_net_smoke.tscn -- --role=client
+```
+
 Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):
 ```
 godot --headless --path . res://tests/flow_smoke.tscn
@@ -78,6 +87,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - `scripts/core/`: regras puras (elementos, carga, escolha de elementos, classes e skills, ultimates, vida). Ficam fora da cena para serem testáveis e rodarem só no host.
 - `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
 - `scripts/moba/`: modo MOBA: mapa, estruturas, tropas, estado da partida, ouro/níveis/loja e bots.
+- `scripts/practice/`: modo Treino: bonecos de teste, estado com as opções de teste e o painel.
 - `scripts/vfx/`: visual: partículas dos elementos, efeitos de feitiços e estados, modelos animados das unidades e barras de vida.
 - `scripts/audio/`: som: autoload `Audio` (efeitos 3D, loops, música com troca calma/combate/chefe, volumes), sons das unidades e dos eventos da partida.
 - `assets/`: modelos KayKit (CC0), áudio (CC0) e o shader do terreno.
@@ -87,7 +97,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 
 ## Status
 - ✅ Fases 0–1: documento de mecânicas e projeto.
-- ✅ Fase 2: feitiços completos (carga, barreiras elementais, proteção, golpe, 5 especiais, congelar/estilhaçar, empurrão).
+- ✅ Fase 2: feitiços completos (carga, barreiras elementais, proteção, golpe, ultimates, congelar/estilhaçar, empurrão).
 - 🟡 Fase 3: co-op em LAN funcionando (lobby, descoberta, até 4 jogadores, host decide o dano).
 - ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
 - ✅ Classes: Mago, Assassino e Lutador, escolhidas no lobby.

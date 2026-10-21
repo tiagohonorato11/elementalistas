@@ -218,6 +218,7 @@ var has_move_target := false
 var _stuck_time := 0.0
 
 var unit_model: Node3D
+var _body_nodes: Array = []     # corpo da classe (colisão, modelo, anel, nome, sons)
 # Ação pontual para a animação (golpe, tiro, feitiço), sincronizada pelo host.
 var action_anim := ""
 var action_count := 0
@@ -301,16 +302,18 @@ func _build_body() -> void:
 	collision.shape = capsule
 	collision.position.y = 1.0
 	add_child(collision)
+	_body_nodes = [collision]
 
 	unit_model = UnitModel.new()
 	unit_model.model_id = class_id
 	unit_model.unit_height = 2.0
 	add_child(unit_model)
+	_body_nodes.append(unit_model)
 
 	var color: Color = PLAYER_COLORS[color_index % PLAYER_COLORS.size()]
 	if moba:
 		color = Combat.TEAM_COLORS[team]
-	Vfx.add_ring(self, color, radius + 0.35)
+	_body_nodes.append(Vfx.add_ring(self, color, radius + 0.35))
 
 	var label := Label3D.new()
 	label.text = cls.label
@@ -320,12 +323,46 @@ func _build_body() -> void:
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.position.y = 2.75
 	add_child(label)
+	_body_nodes.append(label)
 
 	var sounds := UnitSounds.new()
 	sounds.material = "flesh"
 	sounds.footsteps = true
 	sounds.is_local = is_local() and not is_bot
 	add_child(sounds)
+	_body_nodes.append(sounds)
+
+
+# Treino: troca a classe e os elementos sem recriar o personagem. O host chama
+# em todos os PCs; cada um monta o corpo novo e o host reinicia vida, mana e recargas.
+@rpc("any_peer", "call_local", "reliable")
+func apply_loadout(new_class: String, new_elements: Array) -> void:
+	if _sender() != 1:
+		return
+	class_id = new_class
+	cls = Classes.info(class_id)
+	elements = Loadout.sanitize(new_elements, class_id)
+	for node in _body_nodes:
+		if is_instance_valid(node):
+			remove_child(node)
+			node.queue_free()
+	if _bubble_mesh != null:
+		_bubble_mesh.queue_free()
+		_bubble_mesh = null
+		_bubble_shown = []
+	_hold_slot = ""
+	_build_body()
+	if multiplayer.is_server():
+		health.max_hp = cls.hp
+		health.armor = cls.armor
+		health.reset()
+		max_mana = cls.mana
+		mana = max_mana
+		skill_cooldowns = {}
+		bubble_time = 0.0
+		bubble_elements = []
+		invisible = 0.0
+		_clear_queue()
 
 
 func is_local() -> bool:
