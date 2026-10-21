@@ -96,7 +96,7 @@ func _ready() -> void:
 
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation", "Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
-		".:action_anim", ".:action_count",
+		"Health:stunned", "Health:slowed", "Health:vulnerable", "Health:blinded", ".:action_anim", ".:action_count",
 	])
 
 
@@ -110,14 +110,14 @@ func _physics_process(delta: float) -> void:
 		target = _pick_target()
 
 	var direction := Vector3.ZERO
-	if health.frozen <= 0.0:
+	if not health.is_disabled():
 		if target != null:
 			var offset := target.global_position - global_position
 			offset.y = 0.0
 			var reach: float = info.range + _target_radius(target)
 			if offset.length() > reach * 0.9:
 				direction = offset.normalized()
-			elif attack_timer <= 0.0:
+			elif attack_timer <= 0.0 and health.blinded <= 0.0:
 				_attack()
 			if offset.length() > 0.01:
 				look_at(global_position + offset, Vector3.UP)
@@ -130,7 +130,7 @@ func _physics_process(delta: float) -> void:
 				direction = to_point.normalized()
 				look_at(global_position + direction, Vector3.UP)
 
-	var speed: float = info.speed * (0.5 if health.chilled > 0.0 else 1.0)
+	var speed: float = info.speed * health.speed_factor()
 	velocity.x = direction.x * speed + push_velocity.x
 	velocity.z = direction.z * speed + push_velocity.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta

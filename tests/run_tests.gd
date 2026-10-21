@@ -1,13 +1,13 @@
-# Testes da lógica pura (fila, resolvedor, vida, especiais e teclas).
+# Testes da lógica pura (carga, escolha de elementos, vida, ultimates, classes e teclas).
 # Rodar: godot --headless --path . --script res://tests/run_tests.gd
 extends SceneTree
 
 const E = preload("res://scripts/core/elements.gd")
 const ElementQueue = preload("res://scripts/core/element_queue.gd")
-const SpellResolver = preload("res://scripts/core/spell_resolver.gd")
 const Health = preload("res://scripts/core/health.gd")
 const Keybinds = preload("res://scripts/ui/keybinds.gd")
-const Specials = preload("res://scripts/core/specials.gd")
+const Ultimates = preload("res://scripts/core/ultimates.gd")
+const Loadout = preload("res://scripts/core/loadout.gd")
 const Classes = preload("res://scripts/core/classes.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
@@ -19,10 +19,11 @@ var failures := 0
 
 func _init() -> void:
 	_test_queue()
-	_test_resolver()
+	_test_loadout()
 	_test_health()
 	_test_statuses()
-	_test_specials()
+	_test_skill_statuses()
+	_test_ultimates()
 	_test_keybinds()
 	_test_classes()
 	_test_moba()
@@ -48,32 +49,33 @@ func _test_queue() -> void:
 	var T = E.Type
 	check(queue_of([T.WATER, T.LIGHTNING]) == [], "Água + Raio se anulam")
 	check(queue_of([T.LIFE, T.ARCANE]) == [], "Vida + Arcano se anulam")
-	check(queue_of([T.SHIELD, T.SHIELD]) == [], "Escudo + Escudo se anulam")
+	check(queue_of([T.SHIELD, T.SHIELD]) == [T.SHIELD, T.SHIELD], "repetir Escudo não anula")
 	check(queue_of([T.WATER, T.FIRE]) == [T.STEAM], "Água + Fogo = Vapor")
 	check(queue_of([T.COLD, T.WATER]) == [T.ICE], "Frio + Água = Gelo")
-	check(queue_of([T.WATER, T.FIRE, T.COLD]) == [], "Vapor + Frio se anulam")
-	check(queue_of([T.FIRE, T.FIRE, T.COLD]) == [T.FIRE], "Frio anula só um Fogo")
-	check(queue_of([T.LIFE, T.EARTH, T.ARCANE]) == [T.EARTH], "anulação remove o par certo")
-	check(queue_of([T.FIRE, T.FIRE, T.FIRE, T.FIRE, T.FIRE, T.FIRE]).size() == 5, "limite de 5")
+	check(queue_of([T.FIRE, T.FIRE, T.FIRE]) == [T.FIRE, T.FIRE, T.FIRE], "pode repetir o mesmo elemento")
+	check(queue_of([T.FIRE, T.FIRE, T.FIRE, T.FIRE, T.FIRE]).size() == 3, "carga: no máximo 3")
 
 
-func _test_resolver() -> void:
+func _test_loadout() -> void:
 	var T = E.Type
-	var S = SpellResolver.Shape
-	var cases := [
-		[[], S.NONE],
-		[[T.SHIELD, T.FIRE], S.BARRIER],
-		[[T.EARTH, T.FIRE], S.PROJECTILE],
-		[[T.ICE], S.PROJECTILE],
-		[[T.ARCANE, T.FIRE], S.BEAM],
-		[[T.LIFE], S.BEAM],
-		[[T.LIGHTNING, T.FIRE], S.ARC],
-		[[T.FIRE, T.FIRE], S.SPRAY],
-		[[T.STEAM], S.SPRAY],
-	]
-	for test_case in cases:
-		var got := SpellResolver.resolve_shape(test_case[0])
-		check(got == test_case[1], "forma de %s: esperado %s, veio %s" % [test_case[0], test_case[1], got])
+	check(Loadout.is_valid([T.FIRE, T.LIGHTNING, T.ARCANE]), "Fogo, Raio e Arcano valem")
+	check(not Loadout.is_valid([T.FIRE, T.EARTH, T.LIGHTNING]), "Terra e Raio são opostos")
+	check(not Loadout.is_valid([T.FIRE, T.COLD, T.EARTH]), "Fogo e Frio são opostos")
+	check(not Loadout.is_valid([T.FIRE, T.FIRE, T.EARTH]), "elementos repetidos não valem")
+	check(not Loadout.is_valid([T.FIRE, T.EARTH]), "precisa de 3")
+	check(not Loadout.is_valid([T.FIRE, T.EARTH, T.STEAM]), "só os 8 elementos básicos")
+	check(Loadout.can_add([T.FIRE], T.EARTH) and not Loadout.can_add([T.FIRE], T.COLD), "lobby bloqueia o oposto")
+	check(Loadout.is_valid([T.VOID, T.GRAVITY, T.SMOKE]), "Vazio, Gravidade e Fumaça juntos valem")
+	check(not Loadout.is_valid([T.VOID, T.SHIELD, T.FIRE]), "Vazio e Escudo são opostos")
+	check(not Loadout.is_valid([T.SMOKE, T.WATER, T.FIRE]), "Fumaça e Água são opostos")
+	for id in Classes.ORDER:
+		check(Loadout.is_valid(Loadout.default_for(id)), "padrão de %s é válido" % id)
+	var all_valid := true
+	for i in 30:
+		all_valid = all_valid and Loadout.is_valid(Loadout.random())
+	check(all_valid, "sorteio dos bots é sempre válido")
+	check(Loadout.sanitize([T.FIRE, T.COLD, T.EARTH], "fighter") == Loadout.default_for("fighter"), "escolha inválida vira o padrão")
+	check(Loadout.sanitize([7.0, 4.0, 5.0], "mage") == [T.FIRE, T.LIGHTNING, T.ARCANE], "números da rede viram elementos")
 
 
 func _test_health() -> void:
@@ -131,22 +133,23 @@ func _test_keybinds() -> void:
 	keybinds.persist = false
 	keybinds.load_defaults()
 	keybinds.apply_all()
-	check(keybinds.bindings.element_water == ["key", KEY_Q], "Água começa no Q")
+	check(keybinds.bindings.skill_q == ["key", KEY_Q] and keybinds.bindings.charge_1 == ["key", KEY_D],
+		"skills no QWER, elementos no D F G")
 
-	keybinds.set_binding("element_water", ["key", KEY_E])
-	check(keybinds.bindings.element_water == ["key", KEY_E], "Água passa para o E")
-	check(keybinds.bindings.element_shield == ["key", KEY_Q], "Escudo (que usava o E) troca para o Q")
+	keybinds.set_binding("skill_q", ["key", KEY_E])
+	check(keybinds.bindings.skill_q == ["key", KEY_E], "skill Q passa para o E")
+	check(keybinds.bindings.skill_e == ["key", KEY_Q], "skill E (que usava o E) troca para o Q")
 	var event := InputEventKey.new()
 	event.physical_keycode = KEY_E
 	event.pressed = true
-	check(event.is_action("element_water") and not event.is_action("element_shield"), "InputMap atualizado")
+	check(event.is_action("skill_q") and not event.is_action("skill_e"), "InputMap atualizado")
 
 	keybinds.set_binding("cast_weapon", ["mouse", MOUSE_BUTTON_RIGHT])
 	check(keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_LEFT], "botões do mouse também trocam")
 	check(Keybinds.event_to_binding(event) == ["key", KEY_E], "evento de tecla vira binding")
 
 	keybinds.load_defaults()
-	check(keybinds.bindings.element_life == ["key", KEY_W] and keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_RIGHT], "restaurar padrão (QWER ASDF, andar no botão direito)")
+	check(keybinds.bindings.charge_3 == ["key", KEY_G] and keybinds.bindings.move_to_cursor == ["mouse", MOUSE_BUTTON_RIGHT], "restaurar padrão (QWER, DFG, andar no botão direito)")
 	keybinds.free()
 
 
@@ -177,28 +180,79 @@ func _test_statuses() -> void:
 	health.free()
 
 
-func _test_specials() -> void:
+func _test_skill_statuses() -> void:
+	var health := Health.new()
+	health.max_hp = 100.0
+	health.reset()
+	health.slow(0.4, 2.0)
+	check(is_equal_approx(health.speed_factor(), 0.6), "lento: -40% de velocidade")
+	health.haste(0.3, 2.0)
+	check(is_equal_approx(health.speed_factor(), 0.6 * 1.3), "acelerado soma com lento")
+	health.stun(1.0)
+	check(health.is_disabled() and health.speed_factor() == 0.0, "atordoado não anda")
+	health.reset()
+	health.make_vulnerable(0.3, 2.0)
+	health.damage(10.0)
+	check(is_equal_approx(health.hp, 87.0), "marcado leva +30% de dano")
+	health.reset()
+	health.fortify(0.3, 2.0)
+	health.damage(10.0)
+	check(is_equal_approx(health.hp, 93.0), "fortificado leva -30% de dano")
+	# Novos elementos.
 	var T = E.Type
-	check(Specials.match_special([T.FIRE, T.EARTH, T.FIRE, T.EARTH]) == "meteor", "receita do Meteoro")
-	check(Specials.match_special([T.EARTH, T.EARTH, T.FIRE, T.FIRE]) == "meteor", "ordem não importa")
-	check(Specials.match_special([T.FIRE, T.EARTH, T.FIRE]) == "", "receita incompleta não lança")
-	check(Specials.match_special([]) == "", "fila vazia não lança")
-	# Toda receita precisa sobreviver às anulações e fusões da fila.
-	for id in Specials.ORDER:
-		var recipe: Array = Specials.SPECIALS[id].recipe
-		check(Specials.match_special(queue_of(recipe)) == id, "receita de %s é montável na fila" % id)
+	health.reset()
+	health.shielded = 5.0
+	health.set_ward([T.FIRE])
+	health.haste(0.3, 5.0)
+	health.apply_elements([T.VOID], 1.0)
+	check(health.shielded == 0.0 and health.ward == 0.0 and health.hasted == 0.0 and is_equal_approx(health.hp, 75.0),
+		"Vazio desfaz escudo, proteção e bônus (25 de dano)")
+	health.reset()
+	health.apply_elements([T.SMOKE], 1.0)
+	check(health.blinded > 0.0, "Fumaça cega")
+	health.apply_elements([T.WATER], 1.0)
+	check(health.blinded == 0.0, "Água tira a fumaça")
+	health.reset()
+	health.apply_elements([T.GRAVITY], 1.0)
+	check(health.slowed > 0.0 and is_equal_approx(health.speed_factor(), 0.7), "Gravidade deixa pesado (-30%)")
+	health.immune_status = true
+	health.reset()
+	health.stun(1.0)
+	health.slow(0.5, 1.0)
+	check(not health.is_disabled() and health.speed_factor() == 1.0, "estruturas ignoram atordoar e lentidão")
+	health.free()
+
+
+func _test_ultimates() -> void:
+	var T = E.Type
+	check(Ultimates.resolve([T.FIRE]) == "meteor", "Fogo = Meteoro")
+	check(Ultimates.resolve([T.EARTH, T.FIRE, T.EARTH]) == "quake", "dominante: Terra (2) vence Fogo (1)")
+	check(Ultimates.resolve([T.FIRE, T.LIGHTNING]) == "meteor", "empate: vale o primeiro carregado")
+	check(Ultimates.resolve([T.ICE]) == "frost" and Ultimates.resolve([T.STEAM]) == "tide", "Gelo = Inverno, Vapor = Maremoto")
+	check(Ultimates.resolve([T.VOID]) == "eclipse" and Ultimates.resolve([T.GRAVITY, T.GRAVITY, T.SMOKE]) == "singularity"
+		and Ultimates.resolve([T.SMOKE]) == "smokescreen", "Vazio = Eclipse, Gravidade = Singularidade, Fumaça = Cortina")
+	check(Ultimates.resolve([]) == "", "sem carga não há ultimate")
+	var all_mapped := true
+	for element in Loadout.BASIC:
+		all_mapped = all_mapped and Ultimates.ULTIMATES.has(Ultimates.resolve([element]))
+	check(all_mapped, "todo elemento gera um ultimate")
 
 
 func _test_classes() -> void:
 	for id in Classes.ORDER:
 		var info := Classes.info(id)
 		var ok := true
-		for key in ["label", "description", "hp", "speed", "armor", "spell_power", "special_cooldown",
-				"weapon", "backstab", "ability", "ability_label", "ability_cooldown"]:
+		for key in ["label", "description", "hp", "speed", "armor", "mana", "mana_regen", "spell_power",
+				"weapon", "backstab", "skills"]:
 			ok = ok and info.has(key)
-		for key in ["damage", "cooldown", "range", "angle", "push", "element_scale", "charges"]:
+		for key in ["damage", "cooldown", "range", "angle", "push"]:
 			ok = ok and info.weapon.has(key)
-		check(ok, "classe %s tem todos os atributos" % id)
+		for slot in Classes.SLOTS:
+			var skill: Dictionary = info.skills.get(slot, {})
+			for key in ["id", "label", "cost", "cooldown"]:
+				ok = ok and skill.has(key)
+			ok = ok and skill.get("cost", 999.0) <= info.mana
+		check(ok, "classe %s tem atributos e as 4 skills" % id)
 	check(Classes.info("nao_existe").label == "Mago", "classe desconhecida vira Mago")
 
 	var health := Health.new()
@@ -237,6 +291,7 @@ func _test_moba() -> void:
 	var mage := Classes.info("mage")
 	var base := Progression.stats(mage, 1, [], {})
 	check(is_equal_approx(base.max_hp, 200.0) and is_equal_approx(base.power, 1.0), "nível 1 = atributos da classe")
+	check(is_equal_approx(base.max_mana, 160.0), "nível 1 = mana da classe")
 	var strong := Progression.stats(mage, 3, ["amuleto", "foco"], {"golem": 10.0})
 	check(is_equal_approx(strong.max_hp, 200.0 * 1.16 + 90.0), "vida: nível + Amuleto")
 	check(is_equal_approx(strong.power, 1.12 * (1.0 + 0.12 + 0.2)), "dano: nível x (Foco + Fúria do Golem)")

@@ -20,6 +20,7 @@ class Driver extends Node:
 		if role == "host":
 			if step == 0:
 				Network.my_class = "mage"
+				Network.my_loadouts = {}   # elementos padrão da classe
 				Network.settings = {"mode": "moba", "bots": true}
 				Network.host()
 				step = 1
@@ -34,6 +35,7 @@ class Driver extends Node:
 		else:
 			if step == 0 and time > 1.0:
 				Network.my_class = "assassin"
+				Network.my_loadouts = {}   # elementos padrão da classe
 				Network.join("127.0.0.1")
 				step = 1
 			elif step == 1 and Network.players.size() >= 2:

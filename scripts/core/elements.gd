@@ -2,7 +2,7 @@
 # Todos os números aqui são nossos e podem ser ajustados livremente.
 extends RefCounted
 
-enum Type { WATER, LIFE, SHIELD, COLD, LIGHTNING, ARCANE, EARTH, FIRE, STEAM, ICE }
+enum Type { WATER, LIFE, SHIELD, COLD, LIGHTNING, ARCANE, EARTH, FIRE, STEAM, ICE, VOID, GRAVITY, SMOKE }
 
 const NONE := -1
 
@@ -17,6 +17,9 @@ const NAMES := {
 	Type.FIRE: "Fogo",
 	Type.STEAM: "Vapor",
 	Type.ICE: "Gelo",
+	Type.VOID: "Vazio",
+	Type.GRAVITY: "Gravidade",
+	Type.SMOKE: "Fumaça",
 }
 
 const COLORS := {
@@ -30,6 +33,9 @@ const COLORS := {
 	Type.FIRE: Color(1.0, 0.45, 0.1),
 	Type.STEAM: Color(0.85, 0.85, 0.85),
 	Type.ICE: Color(0.6, 0.85, 1.0),
+	Type.VOID: Color(0.35, 0.1, 0.55),
+	Type.GRAVITY: Color(0.3, 0.35, 0.75),
+	Type.SMOKE: Color(0.5, 0.5, 0.52),
 }
 
 # Dano por acerto (projétil/área) ou por segundo (spray/beam/arco).
@@ -45,6 +51,9 @@ const DAMAGE := {
 	Type.FIRE: 15.0,
 	Type.STEAM: 20.0,
 	Type.ICE: 25.0,
+	Type.VOID: 25.0,
+	Type.GRAVITY: 20.0,
+	Type.SMOKE: 5.0,
 }
 
 # Pares que se anulam quando entram juntos na fila.
@@ -53,9 +62,10 @@ const OPPOSITES := [
 	[Type.LIFE, Type.ARCANE],
 	[Type.FIRE, Type.COLD],
 	[Type.EARTH, Type.LIGHTNING],
-	[Type.SHIELD, Type.SHIELD],
 	[Type.FIRE, Type.ICE],
 	[Type.COLD, Type.STEAM],
+	[Type.VOID, Type.SHIELD],      # o vazio desfaz escudos
+	[Type.SMOKE, Type.WATER],      # a água assenta a fumaça
 ]
 
 # Pares que se fundem em um terceiro elemento: [a, b, resultado].

@@ -158,6 +158,7 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
+		"Health:stunned", "Health:slowed", "Health:vulnerable", "Health:blinded",
 		".:action_anim", ".:action_count",
 	])
 
@@ -186,10 +187,10 @@ func _physics_process(delta: float) -> void:
 		target = _jungle_target() if is_neutral() else _nearest_player()
 
 	var direction := Vector3.ZERO
-	var frozen := health.frozen > 0.0
-	if is_neutral() and (returning or target == null) and not frozen:
+	var disabled := health.is_disabled()
+	if is_neutral() and (returning or target == null) and not disabled:
 		direction = _return_to_camp()
-	elif target != null and not frozen:
+	elif target != null and not disabled:
 		var offset := target.global_position - global_position
 		offset.y = 0.0
 		var distance := offset.length()
@@ -203,12 +204,10 @@ func _physics_process(delta: float) -> void:
 			direction = _path_direction(delta)
 		if distance > 0.01:
 			look_at(global_position + offset, Vector3.UP)
-		if distance <= attack_range and attack_timer <= 0.0:
+		if distance <= attack_range and attack_timer <= 0.0 and health.blinded <= 0.0:
 			_attack()
 
-	var speed: float = info.speed
-	if health.chilled > 0.0:
-		speed *= 0.5
+	var speed: float = info.speed * health.speed_factor()
 	velocity.x = direction.x * speed + push_velocity.x
 	velocity.z = direction.z * speed + push_velocity.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta

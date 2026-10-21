@@ -3,6 +3,7 @@
 extends Node
 
 const Classes = preload("res://scripts/core/classes.gd")
+const Loadout = preload("res://scripts/core/loadout.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 
 signal players_changed
@@ -24,9 +25,11 @@ const SETTINGS_PATH := "user://settings.cfg"
 
 var players: Array = []          # ids dos peers na partida (o host é sempre 1)
 var classes := {}                # id do peer -> classe escolhida (decidido pelo host)
+var loadouts := {}               # id do peer -> 3 elementos escolhidos (D F G)
 var teams := {}                  # id do peer -> time no MOBA (decidido pelo host)
 var settings := {"mode": "arena", "bots": true}   # escolhidos pelo host
 var my_class := Classes.DEFAULT  # classe escolhida neste PC (salva entre sessões)
+var my_loadouts := {}            # classe -> 3 elementos escolhidos neste PC (salvos)
 var in_game := false
 var last_message := ""           # mostrado no lobby ao voltar para ele
 var found_games := {}            # ip -> {"players": int, "seen": int}
@@ -64,6 +67,7 @@ func host() -> Error:
 	multiplayer.multiplayer_peer = peer
 	players = [1]
 	classes = {1: my_class}
+	loadouts = {1: my_elements()}
 	teams = {1: Combat.BLUE}
 	in_game = false
 	_start_broadcast()
@@ -87,6 +91,7 @@ func leave() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	players = []
 	classes = {}
+	loadouts = {}
 	teams = {}
 	in_game = false
 	_loaded_peers = []
@@ -106,7 +111,7 @@ func _fail_connection() -> void:
 
 
 func _on_connected_to_server() -> void:
-	_report_class.rpc_id(1, my_class)
+	_report_class.rpc_id(1, my_class, my_elements())
 	connected.emit()
 
 
@@ -115,6 +120,7 @@ func _on_peer_connected(id: int) -> void:
 		return
 	players.append(id)
 	classes[id] = Classes.DEFAULT   # até o jogador informar a classe dele
+	loadouts[id] = Loadout.default_for(Classes.DEFAULT)
 	teams[id] = _smaller_team()
 	_broadcast_lobby()
 
@@ -124,6 +130,7 @@ func _on_peer_disconnected(id: int) -> void:
 		return
 	players.erase(id)
 	classes.erase(id)
+	loadouts.erase(id)
 	teams.erase(id)
 	_loaded_peers.erase(id)
 	_broadcast_lobby()
@@ -133,13 +140,15 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _broadcast_lobby() -> void:
-	_sync_players.rpc(players, classes, teams, settings)
+	_sync_players.rpc(players, classes, loadouts, teams, settings)
 
 
 @rpc("authority", "call_local", "reliable")
-func _sync_players(list: Array, class_map: Dictionary, team_map: Dictionary, game_settings: Dictionary) -> void:
+func _sync_players(list: Array, class_map: Dictionary, loadout_map: Dictionary, team_map: Dictionary,
+		game_settings: Dictionary) -> void:
 	players = list.duplicate()
 	classes = class_map.duplicate()
+	loadouts = loadout_map.duplicate()
 	teams = team_map.duplicate()
 	settings = game_settings.duplicate()
 	players_changed.emit()
@@ -189,21 +198,39 @@ func _smaller_team() -> int:
 	return Combat.BLUE if _team_size(Combat.BLUE) <= _team_size(Combat.RED) else Combat.RED
 
 
-# Bots que completam os times no MOBA: [{"team": 0, "class": "mage"}, ...].
+# Bots que completam os times no MOBA: [{"team": 0, "class": "mage", "elements": [...]}, ...].
 func bot_plan() -> Array:
 	var plan := []
 	if game_mode() != "moba" or not settings.get("bots", true):
 		return plan
 	for team in [Combat.BLUE, Combat.RED]:
 		for i in maxi(MOBA_TEAM_SIZE - _team_size(team), 0):
-			plan.append({"team": team, "class": Classes.ORDER.pick_random()})
+			plan.append({"team": team, "class": Classes.ORDER.pick_random(), "elements": Loadout.random()})
 	return plan
 
 
-# --- Classes -----------------------------------------------------------------
+# --- Classes e elementos ----------------------------------------------------------
 
 func class_of(peer_id: int) -> String:
 	return classes.get(peer_id, Classes.DEFAULT)
+
+
+func elements_of(peer_id: int) -> Array:
+	return Loadout.sanitize(loadouts.get(peer_id, []), class_of(peer_id))
+
+
+# Os 3 elementos escolhidos neste PC para a classe atual (padrão da classe se nada salvo).
+func my_elements() -> Array:
+	return Loadout.sanitize(my_loadouts.get(my_class, []), my_class)
+
+
+# Escolha de elementos no lobby (precisa ser válida: 3, diferentes, sem opostos).
+func set_my_elements(elements: Array) -> void:
+	if not Loadout.is_valid(elements):
+		return
+	my_loadouts[my_class] = elements.duplicate()
+	_save_class()
+	_report_choice()
 
 
 # Escolha feita no lobby; vale a partir da próxima partida (ou reinício).
@@ -212,12 +239,16 @@ func set_my_class(id: String) -> void:
 		return
 	my_class = id
 	_save_class()
+	_report_choice()
+
+
+func _report_choice() -> void:
 	if is_online() and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
-		_report_class.rpc_id(1, id)
+		_report_class.rpc_id(1, my_class, my_elements())
 
 
 @rpc("any_peer", "call_local", "reliable")
-func _report_class(id: String) -> void:
+func _report_class(id: String, elements: Array) -> void:
 	if not multiplayer.is_server() or not Classes.is_valid(id):
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -225,6 +256,7 @@ func _report_class(id: String) -> void:
 		sender = multiplayer.get_unique_id()
 	if sender in players:
 		classes[sender] = id
+		loadouts[sender] = Loadout.sanitize(elements, id)
 		_broadcast_lobby()
 
 
@@ -234,12 +266,18 @@ func _load_class() -> void:
 		var saved: String = config.get_value("jogador", "classe", Classes.DEFAULT)
 		if Classes.is_valid(saved):
 			my_class = saved
+		for id in Classes.ORDER:
+			var elements = config.get_value("jogador", "elementos_" + id, [])
+			if elements is Array and Loadout.is_valid(elements):
+				my_loadouts[id] = elements
 
 
 func _save_class() -> void:
 	var config := ConfigFile.new()
 	config.load(SETTINGS_PATH)
 	config.set_value("jogador", "classe", my_class)
+	for id in my_loadouts:
+		config.set_value("jogador", "elementos_" + id, my_loadouts[id])
 	config.save(SETTINGS_PATH)
 
 

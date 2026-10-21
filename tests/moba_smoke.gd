@@ -17,6 +17,7 @@ class Driver extends Node:
 
 	func _ready() -> void:
 		Network.my_class = "mage"
+		Network.my_loadouts = {}   # elementos padrão da classe
 		Network.settings = {"mode": "moba", "bots": true}
 		var started := Time.get_ticks_msec()
 		Network.host()

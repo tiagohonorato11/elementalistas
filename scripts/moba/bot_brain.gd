@@ -1,5 +1,5 @@
 # IA de um campeão bot no MOBA (roda só no host, como filho do personagem).
-# Usa os mesmos pedidos que um jogador (request_element, request_weapon...):
+# Usa os mesmos pedidos que um jogador (request_charge, request_skill, request_weapon...):
 # - segue a rota atrás das próprias tropas;
 # - luta com o que estiver perto, sem entrar sozinho no alcance de torres inimigas;
 # - com pouca vida volta à base, se cura e compra itens.
@@ -9,7 +9,6 @@ const E = preload("res://scripts/core/elements.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
-const Specials = preload("res://scripts/core/specials.gd")
 const Structure = preload("res://scripts/moba/structure.gd")
 
 const THINK_TIME := 0.25
@@ -18,7 +17,8 @@ const RETREAT_HP := 0.3
 const RESUME_HP := 0.9
 const MAGE_DISTANCE := 6.5
 const MELEE_DISTANCE := 1.4
-const COMBO_PAUSE := 2.6        # espera entre combinações (1 s de disparo + duração)
+const SKILL_PAUSE := 1.2        # espera entre duas skills
+const ULTIMATE_CHANCE := 0.25
 const FOLLOW_BEHIND := 3.0      # distância atrás da tropa aliada mais avançada
 const ITEM_PREFERENCE := {
 	"mage": ["foco", "ampulheta", "amuleto", "botas", "foco", "couraca"],
@@ -30,7 +30,7 @@ var bot: Node
 var lane := "norte"
 var retreating := false
 var _think := 0.0
-var _combo_wait := 0.0
+var _skill_wait := 0.0
 
 
 func _ready() -> void:
@@ -42,7 +42,7 @@ func _physics_process(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	_think -= delta
-	_combo_wait -= delta
+	_skill_wait -= delta
 	if _think > 0.0:
 		return
 	_think = THINK_TIME
@@ -122,51 +122,65 @@ func _fight(target: Node3D) -> void:
 	else:
 		bot.has_move_target = false
 
-	# Golpe (classes corpo a corpo), às vezes com um elemento na arma.
+	# Golpe básico (classes corpo a corpo).
 	if bot.class_id != "mage" and distance <= bot.cls.weapon.range + 0.3 and bot.weapon_timer <= 0.0:
-		if bot.queue.is_empty() and randf() < 0.35:
-			bot.request_element([E.Type.FIRE, E.Type.COLD, E.Type.LIGHTNING].pick_random())
 		bot.request_weapon(direction)
 
-	_maybe_ability(target, distance, direction)
-	_maybe_special(target, distance)
-
-	# Combinação de elementos (sai sozinha 1 s depois).
-	if _combo_wait <= 0.0 and bot.queue.is_empty() and not bot._is_channeling() and distance <= 9.0:
-		for element in _choose_combo(target, distance):
-			bot.request_element(element)
-		_combo_wait = COMBO_PAUSE
+	if _skill_wait <= 0.0 and not bot._is_channeling():
+		var slot := _choose_skill(target, distance)
+		if not slot.is_empty():
+			_use(slot, target)
+			_skill_wait = SKILL_PAUSE
 
 
-func _choose_combo(target: Node3D, distance: float) -> Array:
-	if target.is_in_group("structures"):
-		return [E.Type.EARTH, E.Type.EARTH]
-	if distance <= 4.5:
-		return [[E.Type.FIRE, E.Type.FIRE, E.Type.FIRE], [E.Type.COLD, E.Type.COLD], [E.Type.LIGHTNING, E.Type.LIGHTNING]].pick_random()
-	return [[E.Type.EARTH, E.Type.EARTH], [E.Type.ARCANE, E.Type.FIRE], [E.Type.LIGHTNING, E.Type.LIGHTNING],
-		[E.Type.EARTH, E.Type.FIRE]].pick_random()
+# Qual skill usar agora ("" = nenhuma), conforme a classe e a distância.
+func _choose_skill(target: Node3D, distance: float) -> String:
+	var champion := target.is_in_group("players")
+	var hurt: bool = bot.health.hp < bot.health.max_hp * 0.5
+	if champion and distance <= 10.0 and randf() < ULTIMATE_CHANCE and _ready_skill("r"):
+		return "r"
+	match bot.class_id:
+		"mage":
+			if hurt and _ready_skill("w"):
+				return "w"
+			if champion and distance <= 9.0 and _ready_skill("w"):
+				return "w"
+			if distance <= 10.0 and not target.is_in_group("structures") and _ready_skill("e"):
+				return "e"
+			if distance <= 12.0 and _ready_skill("q"):
+				return "q"
+		"assassin":
+			if champion and distance >= 3.0 and distance <= 6.0 and _ready_skill("e"):
+				return "e"
+			if champion and distance <= 8.0 and _ready_skill("w"):
+				return "w"
+			if distance <= 10.0 and _ready_skill("q"):
+				return "q"
+		"fighter":
+			if distance >= 3.0 and distance <= 7.0 and not target.is_in_group("structures") and _ready_skill("e"):
+				return "e"
+			if distance <= 2.8 and _ready_skill("q"):
+				return "q"
+			if (hurt or champion) and distance <= 8.0 and _ready_skill("w"):
+				return "w"
+	return ""
 
 
-func _maybe_ability(target: Node3D, distance: float, direction: Vector3) -> void:
-	if bot.ability_cooldown > 0.0 or target.is_in_group("structures"):
-		return
-	if bot.class_id == "fighter" and distance >= 3.0 and distance <= 7.0:
-		bot.request_ability(direction)
-	elif bot.class_id == "assassin" and target.is_in_group("players") and distance >= 3.0 and distance <= 6.0:
-		bot.request_ability(direction)
-	elif bot.class_id == "mage" and distance <= 4.0 and bot.health.hp < bot.health.max_hp * 0.5:
-		bot.request_ability(direction)
+func _ready_skill(slot: String) -> bool:
+	var skill: Dictionary = bot.cls.skills[slot]
+	return bot.skill_cooldowns.get(slot, 0.0) <= 0.0 and bot.mana >= skill.cost
 
 
-# Meteoro de vez em quando num campeão inimigo.
-func _maybe_special(target: Node3D, distance: float) -> void:
-	if not target.is_in_group("players") or distance > 12.0 or bot.special_cooldowns.has("meteor"):
-		return
-	if not bot.queue.is_empty() or randf() > 0.15:
-		return
-	for element in Specials.SPECIALS.meteor.recipe:
-		bot.request_element(element)
-	bot.request_special(target.global_position)
+# Carrega 1 ou 2 elementos (o ultimate precisa de carga) e usa a skill no alvo.
+# W: ferido, cuida de si; senão, enfraquece o alvo.
+func _use(slot: String, target: Node3D) -> void:
+	if bot.queue.is_empty():
+		for i in randi_range(1, 2):
+			bot.request_charge(randi() % bot.elements.size())
+	var target_name := String(target.name)
+	if slot == "w" and bot.health.hp < bot.health.max_hp * 0.5:
+		target_name = ""
+	bot.request_skill(slot, target.global_position, target_name)
 
 
 # Sem alvo: segue a rota, atrás da tropa aliada mais avançada (ou na própria torre).

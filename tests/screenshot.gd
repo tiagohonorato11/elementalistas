@@ -1,10 +1,9 @@
 # Capturas de tela para conferir o visual (precisa de janela, não roda com --headless):
 #   godot --path . res://tests/screenshot.tscn -- --mode=arena --out=C:/caminho/captura
-# Arena: lança spray, beam, arco, projétil e meteoro em alvos com estados.
+# Arena: usa Orbe, Raio laser, Maldição e Meteoro (Mago) em alvos com estados.
 # MOBA: tira fotos das rotas com tropas, de uma base e do centro da selva.
+# Lobby (--mode=lobby): a tela inicial.
 extends Node
-
-const E = preload("res://scripts/core/elements.gd")
 
 
 class Driver extends Node:
@@ -19,7 +18,11 @@ class Driver extends Node:
 				out = arg.get_slice("=", 1)
 			elif arg.begins_with("--mode="):
 				mode = arg.get_slice("=", 1)
+		if mode == "lobby":
+			await _lobby_shot()
+			return
 		Network.my_class = "mage"
+		Network.my_loadouts = {}   # elementos padrão da classe
 		Network.settings = {"mode": mode, "bots": true}
 		Network.host()
 		Network.start_game()
@@ -51,6 +54,8 @@ class Driver extends Node:
 		await _seconds(0.3)
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			enemy.set_physics_process(false)
+			enemy.health.max_hp = 999.0
+			enemy.health.reset()
 			targets.append(enemy)
 		targets[0].health.burning = 99.0
 		targets[1].health.frozen = 99.0
@@ -58,21 +63,29 @@ class Driver extends Node:
 		player.health.shielded = 99.0
 		var center: Vector3 = targets[1].global_position
 		player.aim_point = center
-		await _cast([E.Type.FIRE, E.Type.FIRE], 1.35, "spray")
-		await _seconds(2.0)
-		await _cast([E.Type.ARCANE, E.Type.FIRE], 1.4, "beam")
-		await _seconds(2.0)
-		await _cast([E.Type.LIGHTNING], 1.35, "arco")
-		await _seconds(2.0)
-		await _cast([E.Type.EARTH, E.Type.FIRE], 1.07, "projetil")
+		# Mago com Fogo, Raio e Arcano (slots 0, 1, 2).
+		await _cast([0, 0], "q", center, 0.18, "orbe")
 		await _seconds(1.0)
-		await _cast([E.Type.SHIELD, E.Type.FIRE], 1.15, "parede")
+		await _cast([1, 2], "e", center, 0.6, "laser")
+		await _seconds(1.5)
+		await _cast([2], "w", center, 0.1, "maldicao", String(targets[1].name))
 		await _seconds(1.0)
-		for element in [E.Type.FIRE, E.Type.EARTH, E.Type.FIRE, E.Type.EARTH]:
-			player.request_element(element)
-		player.request_special(center)
+		player._clear_queue()
+		player.request_charge(0)
+		player.request_charge(1)
+		await _seconds(0.3)
+		await _shot("carga")
+		player.request_skill("r", center, "")
 		await _seconds(1.05)
 		await _shot("meteoro")
+
+	# Tela inicial com a escolha de classe e de elementos.
+	func _lobby_shot() -> void:
+		Network.command_line_used = true
+		get_tree().change_scene_to_file("res://scenes/lobby.tscn")
+		await _seconds(0.8)
+		await _shot("lobby")
+		get_tree().quit()
 
 	func _moba_shots() -> void:
 		Engine.time_scale = 3.0
@@ -95,9 +108,13 @@ class Driver extends Node:
 		await _seconds(0.6)
 		await _shot("selva")
 
-	func _cast(elements: Array, wait: float, name_: String) -> void:
-		for element in elements:
-			player.request_element(element)
+	# Carrega os slots dados (0 = D, 1 = F, 2 = G), usa a skill e tira a foto depois de `wait`.
+	func _cast(slots: Array, skill: String, at: Vector3, wait: float, name_: String, target := "") -> void:
+		player.skill_cooldowns = {}
+		player.mana = player.max_mana
+		for slot in slots:
+			player.request_charge(slot)
+		player.request_skill(skill, at, target)
 		await _seconds(wait)
 		await _shot(name_)
 

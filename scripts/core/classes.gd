@@ -1,41 +1,68 @@
-# Classes jogáveis. Todas usam a mesma fila de elementos; cada uma tem atributos,
-# arma e habilidade próprias. Todos os números são nossos e podem ser ajustados.
+# Classes jogáveis. Cada uma tem atributos, golpe básico (botão esquerdo), mana
+# e 4 skills em Q W E R. As skills usam a carga de elementos (D F G) do jogador.
+# Todos os números são nossos e podem ser ajustados.
 extends RefCounted
 
 const DEFAULT := "mage"
 const ORDER := ["mage", "assassin", "fighter"]
+const SLOTS := ["q", "w", "e", "r"]
 
+# Em toda skill: label, cost (mana), cooldown (s) e os números próprios dela.
+# W é dupla: aliado/si mesmo (ally) ou inimigo sob o mouse (enemy).
 const CLASSES := {
 	"mage": {
 		"label": "Mago",
-		"description": "Feitiços com força total e recarga normal dos especiais. Habilidade: Escudo arcano.",
+		"description": "Q Orbe | W Bênção (aliado) ou Maldição (inimigo) | E Raio laser | R Ultimate. Muita mana.",
 		"hp": 200.0, "speed": 5.0, "armor": 0.0,
-		"spell_power": 1.0, "special_cooldown": 1.0,
-		# charges = quantos golpes seguidos levam os elementos da fila.
-		"weapon": {"damage": 20.0, "cooldown": 0.6, "range": 2.3, "angle": 1.05, "push": 4.0,
-			"element_scale": 0.8, "charges": 1},
+		"mana": 160.0, "mana_regen": 5.0,
+		"spell_power": 1.0,
+		"weapon": {"damage": 20.0, "cooldown": 0.6, "range": 2.3, "angle": 1.05, "push": 4.0},
 		"backstab": 1.0,
-		"ability": "arcane_shield", "ability_label": "Escudo arcano", "ability_cooldown": 12.0,
+		"skills": {
+			"q": {"id": "orb", "label": "Orbe", "cost": 15.0, "cooldown": 1.5,
+				"damage": 30.0, "speed": 20.0},
+			"w": {"id": "bless_curse", "label": "Bênção/Maldição", "cost": 30.0, "cooldown": 8.0,
+				"heal": 30.0, "slow": 0.4, "vulnerable": 0.2, "duration": 4.0},
+			"e": {"id": "laser", "label": "Raio laser", "cost": 35.0, "cooldown": 6.0,
+				"dps": 35.0, "duration": 1.5, "range": 20.0},
+			"r": {"id": "ultimate", "label": "Ultimate", "cost": 80.0, "cooldown": 60.0, "power": 1.0},
+		},
 	},
 	"assassin": {
 		"label": "Assassino",
-		"description": "Rápido e frágil. Adagas levam os elementos por 3 golpes; pelas costas, 2x. Habilidade: Passo sombrio (avança e fica invisível).",
+		"description": "Q Adaga (2x pelas costas) | W Véu (aliado: invisível) ou Marca (inimigo) | E Passo sombrio | R Ultimate. Rápido e frágil.",
 		"hp": 140.0, "speed": 6.5, "armor": 0.0,
-		"spell_power": 0.7, "special_cooldown": 1.5,
-		"weapon": {"damage": 14.0, "cooldown": 0.3, "range": 1.9, "angle": 0.8, "push": 1.5,
-			"element_scale": 1.0, "charges": 3},
+		"mana": 110.0, "mana_regen": 6.0,
+		"spell_power": 0.8,
+		"weapon": {"damage": 14.0, "cooldown": 0.3, "range": 1.9, "angle": 0.8, "push": 1.5},
 		"backstab": 2.0,
-		"ability": "shadow_step", "ability_label": "Passo sombrio", "ability_cooldown": 8.0,
+		"skills": {
+			"q": {"id": "dagger", "label": "Adaga", "cost": 12.0, "cooldown": 2.0,
+				"damage": 24.0, "speed": 30.0},
+			"w": {"id": "veil_mark", "label": "Véu/Marca", "cost": 25.0, "cooldown": 10.0,
+				"invisible": 2.5, "vulnerable": 0.3, "duration": 4.0},
+			"e": {"id": "shadow_step", "label": "Passo sombrio", "cost": 25.0, "cooldown": 8.0,
+				"distance": 6.0, "radius": 2.5, "damage": 25.0},
+			"r": {"id": "ultimate", "label": "Ultimate", "cost": 70.0, "cooldown": 60.0, "power": 0.8},
+		},
 	},
 	"fighter": {
 		"label": "Lutador",
-		"description": "Muita vida e armadura. Golpes pesados e largos que empurram. Habilidade: Investida (atropela levando os elementos da fila).",
+		"description": "Q Golpe giratório | W Grito (aliado) ou Desafio (inimigo) | E Investida | R Ultimate. Muita vida e armadura.",
 		"hp": 320.0, "speed": 4.5, "armor": 0.25,
-		"spell_power": 0.8, "special_cooldown": 1.5,
-		"weapon": {"damage": 35.0, "cooldown": 0.9, "range": 2.7, "angle": 1.3, "push": 8.0,
-			"element_scale": 1.2, "charges": 1},
+		"mana": 100.0, "mana_regen": 4.0,
+		"spell_power": 0.8,
+		"weapon": {"damage": 35.0, "cooldown": 0.9, "range": 2.7, "angle": 1.3, "push": 8.0},
 		"backstab": 1.0,
-		"ability": "charge", "ability_label": "Investida", "ability_cooldown": 7.0,
+		"skills": {
+			"q": {"id": "whirl", "label": "Golpe giratório", "cost": 15.0, "cooldown": 4.0,
+				"damage": 35.0, "radius": 2.8, "push": 7.0},
+			"w": {"id": "shout", "label": "Grito/Desafio", "cost": 25.0, "cooldown": 10.0,
+				"heal": 20.0, "haste": 0.3, "fortify": 0.3, "slow": 0.4, "duration": 4.0},
+			"e": {"id": "charge", "label": "Investida", "cost": 25.0, "cooldown": 7.0,
+				"damage": 30.0, "push": 10.0},
+			"r": {"id": "ultimate", "label": "Ultimate", "cost": 60.0, "cooldown": 60.0, "power": 0.8},
+		},
 	},
 }
 
@@ -47,3 +74,7 @@ static func info(id: String) -> Dictionary:
 
 static func is_valid(id: String) -> bool:
 	return CLASSES.has(id)
+
+
+static func skill(id: String, slot: String) -> Dictionary:
+	return info(id).skills.get(slot, {})

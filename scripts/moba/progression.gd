@@ -17,7 +17,7 @@ const ITEMS := {
 	"amuleto": {"label": "Amuleto de vida", "cost": 300, "hp": 90.0, "description": "+90 de vida"},
 	"foco": {"label": "Foco elemental", "cost": 350, "power": 0.12, "description": "+12% de dano"},
 	"botas": {"label": "Botas velozes", "cost": 250, "speed": 0.8, "description": "+0,8 de velocidade"},
-	"ampulheta": {"label": "Ampulheta", "cost": 400, "cooldown": 0.15, "description": "-15% nas recargas"},
+	"ampulheta": {"label": "Ampulheta", "cost": 400, "cooldown": 0.15, "mana": 40.0, "description": "-15% nas recargas, +40 de mana"},
 	"couraca": {"label": "Couraça", "cost": 350, "armor": 0.1, "description": "+10% de armadura"},
 }
 const ITEM_ORDER := ["amuleto", "foco", "botas", "ampulheta", "couraca"]
@@ -51,6 +51,7 @@ static func apply_xp(level: int, xp: int, gained: int) -> Array:
 static func stats(class_info: Dictionary, level: int, items: Array, buffs: Dictionary) -> Dictionary:
 	var result := {
 		"max_hp": class_info.hp * (1.0 + 0.08 * (level - 1)),
+		"max_mana": class_info.mana * (1.0 + 0.08 * (level - 1)),
 		"power": 1.0 + 0.06 * (level - 1),
 		"speed": 0.0,
 		"armor": class_info.armor,
@@ -60,6 +61,7 @@ static func stats(class_info: Dictionary, level: int, items: Array, buffs: Dicti
 	for id in items:
 		var item: Dictionary = ITEMS.get(id, {})
 		result.max_hp += item.get("hp", 0.0)
+		result.max_mana += item.get("mana", 0.0)
 		power_bonus += item.get("power", 0.0)
 		result.speed += item.get("speed", 0.0)
 		result.armor += item.get("armor", 0.0)

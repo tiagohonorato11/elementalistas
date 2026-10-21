@@ -112,7 +112,7 @@ func _on_all_loaded() -> void:
 	for i in Network.players.size():
 		var peer: int = Network.players[i]
 		spawn_entity({"type": "player", "id": peer, "class": Network.class_of(peer), "team": Combat.BLUE,
-			"color": i, "pos": SPAWN_POINTS[i % SPAWN_POINTS.size()]})
+			"elements": Network.elements_of(peer), "color": i, "pos": SPAWN_POINTS[i % SPAWN_POINTS.size()]})
 
 
 # MOBA: estado da partida, estruturas e selva, jogadores nos times e bots completando.
@@ -124,12 +124,12 @@ func _start_moba() -> void:
 	for peer in Network.players:
 		var team := Network.team_of(peer)
 		champions.append({"type": "player", "id": peer, "class": Network.class_of(peer), "team": team,
-			"color": slots[team], "pos": MobaMap.spawn_point(team, slots[team])})
+			"elements": Network.elements_of(peer), "color": slots[team], "pos": MobaMap.spawn_point(team, slots[team])})
 		slots[team] += 1
 	var bot_id := BOT_ID_START
 	for bot in Network.bot_plan():
 		champions.append({"type": "player", "id": bot_id, "bot": true, "class": bot.class, "team": bot.team,
-			"color": slots[bot.team], "pos": MobaMap.spawn_point(bot.team, slots[bot.team])})
+			"elements": bot.elements, "color": slots[bot.team], "pos": MobaMap.spawn_point(bot.team, slots[bot.team])})
 		slots[bot.team] += 1
 		bot_id += 1
 	for data in champions:
@@ -167,6 +167,7 @@ func _spawn_entity(data: Dictionary) -> Node:
 		player.class_id = data.get("class", "mage")
 		player.team = data.get("team", Combat.BLUE)
 		player.color_index = data.get("color", 0)
+		player.elements = data.get("elements", [])
 		if not player.is_bot and data.id == multiplayer.get_unique_id():
 			local_player = player
 			player.camera = camera
@@ -181,7 +182,8 @@ func _spawn_entity(data: Dictionary) -> Node:
 	elif data.type == "projectile":
 		var projectile := Projectile.new()
 		projectile.setup(data.elements, data.caster, data.dir, data.get("power", 1.0), data.get("speed", 18.0),
-			data.get("team", Combat.NEUTRAL))
+			data.get("team", Combat.NEUTRAL), data.get("damage", 0.0), data.get("style", "orb"),
+			data.get("backstab", 1.0))
 		node = projectile
 	elif data.type == "barrier":
 		var barrier := Barrier.new()
@@ -191,6 +193,8 @@ func _spawn_entity(data: Dictionary) -> Node:
 	elif data.type == "meteor":
 		var meteor := Meteor.new()
 		meteor.team = data.get("team", Combat.NEUTRAL)
+		meteor.extra = data.get("extra", [])
+		meteor.strength = data.get("strength", 1.0)
 		node = meteor
 	elif data.type == "state":
 		game_state = GameState.new()

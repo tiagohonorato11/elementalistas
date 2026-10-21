@@ -1,4 +1,4 @@
-# Feitiço especial Meteoro: uma marca aparece no chão, a rocha cai e explode
+# Ultimate Meteoro: uma marca aparece no chão, a rocha cai e explode
 # aplicando Fogo + Terra em área e empurrando tudo para longe (aliados também).
 # Em rede: todos animam a queda; só o host aplica o dano e remove o meteoro.
 extends Node3D
@@ -15,6 +15,8 @@ const PUSH := 9.0
 const LINGER := 0.4
 
 var team := Combat.NEUTRAL
+var extra: Array = []          # outros elementos da carga (reforço)
+var strength := 1.0            # força do ultimate
 var age := 0.0
 var exploded := false
 var rock: MeshInstance3D
@@ -73,7 +75,7 @@ func _explode() -> void:
 		offset.y = 0.0
 		if offset.length() > RADIUS or not Combat.can_harm(team, node):
 			continue
-		node.get_node("Health").apply_elements(ELEMENTS, 1.0)
+		node.get_node("Health").apply_elements(Combat.filter_elements(team, node, ELEMENTS + extra), strength)
 		if node.has_method("push") and offset.length() > 0.01:
 			node.push(offset.normalized() * PUSH)
 	get_tree().create_timer(LINGER).timeout.connect(queue_free)
