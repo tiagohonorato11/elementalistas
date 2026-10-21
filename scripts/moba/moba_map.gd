@@ -113,18 +113,22 @@ static func camps() -> Array:
 # Monta a geometria no `main` (chão, paredes, rotas, fontes) e gera o navmesh.
 static func build(main: Node, region: NavigationRegion3D) -> void:
 	main._add_block(region, Vector3(0, -1, 0), Vector3(HALF.x * 2, 1, HALF.y * 2), GROUND_COLOR)
-	main._add_block(region, Vector3(0, 0, -HALF.y), Vector3(HALF.x * 2, 2, 1), WALL_COLOR)
-	main._add_block(region, Vector3(0, 0, HALF.y), Vector3(HALF.x * 2, 2, 1), WALL_COLOR)
-	main._add_block(region, Vector3(-HALF.x, 0, 0), Vector3(1, 2, HALF.y * 2), WALL_COLOR)
-	main._add_block(region, Vector3(HALF.x, 0, 0), Vector3(1, 2, HALF.y * 2), WALL_COLOR)
+	# Bordas do mapa: morros com árvores; entre rotas e selva: fileiras de árvores;
+	# pedras da selva: rochedos. (A colisão continua sendo o bloco.)
+	main._add_block(region, Vector3(0, 0, -HALF.y), Vector3(HALF.x * 2, 2, 1), WALL_COLOR, "mountain")
+	main._add_block(region, Vector3(0, 0, HALF.y), Vector3(HALF.x * 2, 2, 1), WALL_COLOR, "mountain")
+	main._add_block(region, Vector3(-HALF.x, 0, 0), Vector3(1, 2, HALF.y * 2), WALL_COLOR, "mountain")
+	main._add_block(region, Vector3(HALF.x, 0, 0), Vector3(1, 2, HALF.y * 2), WALL_COLOR, "mountain")
 	for wall in WALLS_HALF:
-		var color := ROCK_COLOR if wall[1].x <= 3.0 else WALL_COLOR
-		main._add_block(region, wall[0], wall[1], color)
-		main._add_block(region, Vector3(-wall[0].x, 0, -wall[0].z), wall[1], color)
+		var small: bool = wall[1].x <= 3.0 and wall[1].z <= 3.0
+		var color := ROCK_COLOR if small else WALL_COLOR
+		var style := "rocks" if small else "trees"
+		main._add_block(region, wall[0], wall[1], color, style)
+		main._add_block(region, Vector3(-wall[0].x, 0, -wall[0].z), wall[1], color, style)
 	# Faixas das rotas e fontes (só visual).
 	for lane in LANES:
 		main._add_decal(Vector3(0, 0, LANE_Z * lane_sign(lane)), Vector2(76, 7), LANE_COLOR)
 	for team in [Combat.BLUE, Combat.RED]:
 		var color: Color = Combat.TEAM_COLORS[team]
-		color.a = 0.35
+		color.a = 0.18
 		main._add_disc(fountain(team), FOUNTAIN_RADIUS, color)

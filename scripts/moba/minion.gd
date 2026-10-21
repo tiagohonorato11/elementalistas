@@ -7,6 +7,17 @@ const E = preload("res://scripts/core/elements.gd")
 const Health = preload("res://scripts/core/health.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
+const StatusFx = preload("res://scripts/vfx/status_fx.gd")
+const UnitModel = preload("res://scripts/vfx/unit_model.gd")
+const HealthBar = preload("res://scripts/vfx/health_bar.gd")
+const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
+
+const LOOKS := {
+	"melee": ["skeleton_minion", "1H_Melee_Attack_Chop"],
+	"ranged": ["skeleton_mage", "Spellcast_Shoot"],
+	"super": ["skeleton_warrior", "2H_Melee_Attack_Chop"],
+}
 
 const GRAVITY := 20.0
 const AGGRO_RANGE := 8.0
@@ -29,11 +40,12 @@ var team := Combat.BLUE
 var path: Array = []          # pontos da rota (moba_map.lane_path)
 var info: Dictionary
 var health: Health
-var label: Label3D
 var target: Node3D
 var waypoint := 0
 var attack_timer := 0.5
 var push_velocity := Vector3.ZERO
+var action_anim := ""
+var action_count := 0
 var _retarget_timer := 0.0
 
 
@@ -51,31 +63,31 @@ func _ready() -> void:
 	collision.position.y = 0.8 * size
 	add_child(collision)
 
-	var body := MeshInstance3D.new()
-	var mesh: PrimitiveMesh
-	if kind == "ranged":
-		mesh = CylinderMesh.new()
-		mesh.top_radius = 0.3 * size
-		mesh.bottom_radius = 0.45 * size
-		mesh.height = 1.6 * size
-	else:
-		mesh = BoxMesh.new()
-		mesh.size = Vector3(0.8, 1.6, 0.8) * size
-	body.mesh = mesh
-	body.position.y = 0.8 * size
-	body.material_override = E.make_material(Combat.TEAM_COLORS[team])
-	add_child(body)
+	var unit_model := UnitModel.new()
+	unit_model.model_id = LOOKS[kind][0]
+	unit_model.unit_height = 1.8 * size
+	add_child(unit_model)
+	Vfx.add_ring(self, Combat.TEAM_COLORS[team], capsule.radius + 0.3)
 
 	health = Health.new()
 	health.name = "Health"
 	health.max_hp = info.hp
 	add_child(health)
 
-	label = Label3D.new()
-	label.position.y = 2.0 * size
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.font_size = 28
-	add_child(label)
+	var status_fx := StatusFx.new()
+	status_fx.height = 1.6 * size
+	status_fx.radius = 0.4 * size
+	add_child(status_fx)
+
+	var bar := HealthBar.new()
+	bar.width = 0.9
+	bar.height_above = 1.9 * size + 0.15
+	add_child(bar)
+	var sounds := UnitSounds.new()
+	sounds.material = "bone"
+	sounds.attack_sound = "" if kind == "ranged" else "whoosh"
+	sounds.attack_volume = -10.0
+	add_child(sounds)
 
 	if multiplayer.is_server():
 		health.died.connect(queue_free)
@@ -84,11 +96,8 @@ func _ready() -> void:
 
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation", "Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
+		".:action_anim", ".:action_count",
 	])
-
-
-func _process(_delta: float) -> void:
-	label.text = "%d" % ceili(health.hp)
 
 
 func _physics_process(delta: float) -> void:
@@ -137,6 +146,8 @@ func push(impulse: Vector3) -> void:
 
 func _attack() -> void:
 	attack_timer = info.cooldown
+	action_anim = LOOKS[kind][1]
+	action_count += 1
 	target.health.damage(info.damage)
 	if kind == "ranged":
 		show_shot.rpc(target.global_position)
@@ -190,9 +201,17 @@ func show_shot(at: Vector3) -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(0.08, 0.08, maxf(from.distance_to(to), 0.1))
 	beam.mesh = box
-	beam.material_override = E.make_material(Combat.TEAM_COLORS[team].lightened(0.4))
+	beam.material_override = Vfx.glow_material(Combat.TEAM_COLORS[team].lightened(0.3), 3.0)
 	get_parent().add_child(beam)
 	beam.global_position = (from + to) / 2.0
 	if from.distance_to(to) > 0.1:
 		beam.look_at(to, Vector3.UP)
 	get_tree().create_timer(0.1).timeout.connect(beam.queue_free)
+	Audio.play("minion_shot", from)
+
+
+func _exit_tree() -> void:
+	var parent := get_parent()
+	if parent != null and not parent.is_queued_for_deletion():
+		Vfx.burst(parent, global_position + Vector3.UP * 0.6, E.Type.STEAM, 14, 0.4, 1.5)
+		Audio.play("death_bone", global_position, -4.0)

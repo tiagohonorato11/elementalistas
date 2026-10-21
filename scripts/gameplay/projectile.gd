@@ -5,6 +5,7 @@ extends Node3D
 
 const E = preload("res://scripts/core/elements.gd")
 const Combat = preload("res://scripts/core/combat.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
 
 const LIFETIME := 3.0
 const BASE_PUSH := 2.0
@@ -29,14 +30,58 @@ func setup(p_elements: Array, p_caster_name: String, p_direction: Vector3,
 	speed = p_speed
 
 
+var _mesh: MeshInstance3D
+
+
 func _ready() -> void:
-	var mesh := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.15 + 0.12 * power
-	sphere.height = sphere.radius * 2.0
-	mesh.mesh = sphere
-	mesh.material_override = E.make_material(E.COLORS[elements[0]])
-	add_child(mesh)
+	Audio.play("launch", self, (power - 1.0) * 3.0)
+	# Gelo: cristal brilhante; Terra (ou outro): pedra facetada. Cada elemento deixa um rastro.
+	_mesh = MeshInstance3D.new()
+	var size := 0.15 + 0.12 * power
+	if E.Type.ICE in elements:
+		var crystal := PrismMesh.new()
+		crystal.size = Vector3(size * 1.2, size * 3.0, size * 1.2)
+		_mesh.mesh = crystal
+		_mesh.rotation.x = -PI / 2.0
+		_mesh.material_override = Vfx.glow_material(E.COLORS[E.Type.ICE], 1.5)
+	else:
+		var rock := SphereMesh.new()
+		rock.radius = size
+		rock.height = size * 1.8
+		rock.radial_segments = 6
+		rock.rings = 3
+		_mesh.mesh = rock
+		var material := StandardMaterial3D.new()
+		material.albedo_color = E.COLORS[elements[0]]
+		material.roughness = 1.0
+		_mesh.material_override = material
+	add_child(_mesh)
+	if direction.length() > 0.01:
+		look_at(global_position + direction, Vector3.UP)
+	var trail_elements: Array = []
+	for element in elements:
+		if not (element in trail_elements):
+			trail_elements.append(element)
+	for element in trail_elements:
+		var trail := Vfx.emitter(element, {"amount": 24, "lifetime": 0.35, "speed": 0.5, "spread": 180.0,
+			"sphere": size * 0.6, "size_scale": 0.9 + 0.3 * power})
+		trail.emitting = true
+		add_child(trail)
+
+
+func _process(delta: float) -> void:
+	_mesh.rotate_object_local(Vector3.FORWARD, delta * 8.0)
+
+
+# Impacto: explosão de partículas dos elementos (em todos os PCs, ao sumir).
+func _exit_tree() -> void:
+	var parent := get_parent()
+	if parent == null or parent.is_queued_for_deletion() or elements.is_empty():
+		return
+	for element in elements.slice(0, 2):
+		Vfx.burst(parent, global_position, element, int(16 * power), 0.2, 3.5)
+	var impact := "impact_ice" if E.Type.ICE in elements else "impact_rock" if E.Type.EARTH in elements else "impact_magic"
+	Audio.play(impact, global_position, (power - 1.0) * 3.0)
 
 
 func _physics_process(delta: float) -> void:

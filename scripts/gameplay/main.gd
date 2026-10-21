@@ -16,6 +16,9 @@ const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
 const Structure = preload("res://scripts/moba/structure.gd")
 const Minion = preload("res://scripts/moba/minion.gd")
+const TerrainShader = preload("res://assets/shaders/terrain.gdshader")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
+const GameAudio = preload("res://scripts/audio/game_audio.gd")
 
 const CAMERA_OFFSET := Vector3(0.0, 13.0, 9.0)
 const MOBA_CAMERA_OFFSET := Vector3(0.0, 16.0, 11.0)
@@ -40,7 +43,13 @@ var spawner: MultiplayerSpawner
 var local_player: Player
 var game_state: Node          # GameState (Arena) ou MobaState
 var mode := "arena"
+var zoom := 1.0               # rodinha do mouse: aproxima/afasta a câmera
+# Para o minimapa: metade do mapa (x, z), paredes e rotas como retângulos no chão.
+var map_half := Vector2(ARENA_SIZE / 2.0, ARENA_SIZE / 2.0)
+var map_walls: Array[Rect2] = []
+var map_lanes: Array[Rect2] = []
 var _entity_counter := 0
+var _terrain_materials := {}
 
 
 func _ready() -> void:
@@ -57,6 +66,7 @@ func _ready() -> void:
 
 	hud = Hud.new()
 	add_child(hud)
+	add_child(GameAudio.new())
 
 	spawner = MultiplayerSpawner.new()
 	spawner.name = "Spawner"
@@ -72,11 +82,17 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if is_instance_valid(local_player):
-		camera.global_position = local_player.global_position + (MOBA_CAMERA_OFFSET if mode == "moba" else CAMERA_OFFSET)
+		var offset := MOBA_CAMERA_OFFSET if mode == "moba" else CAMERA_OFFSET
+		camera.global_position = local_player.global_position + offset * zoom
 		camera.look_at(local_player.global_position + Vector3.UP)
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom = clampf(zoom - 0.08, 0.5, 1.5)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom = clampf(zoom + 0.08, 0.5, 1.5)
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	if event.physical_keycode == KEY_ESCAPE:
@@ -209,6 +225,7 @@ func _build_world() -> void:
 	var region := NavigationRegion3D.new()
 	add_child(region)
 	if mode == "moba":
+		map_half = MobaMap.HALF
 		MobaMap.build(self, region)
 	else:
 		_build_arena(region)
@@ -235,23 +252,75 @@ func _build_arena(region: NavigationRegion3D) -> void:
 	_add_block(region, Vector3(-half, 0, 0), Vector3(1, 2, ARENA_SIZE), wall_color)
 	_add_block(region, Vector3(half, 0, 0), Vector3(1, 2, ARENA_SIZE), wall_color)
 	for obstacle in OBSTACLES:
-		_add_block(region, obstacle[0], obstacle[1], Color(0.5, 0.47, 0.42))
+		var style := "rocks" if obstacle[1].x == obstacle[1].z else "trees"
+		_add_block(region, obstacle[0], obstacle[1], Color(0.5, 0.47, 0.42), style)
 
 
+# Sol com sombras, céu, brilho (bloom) para os efeitos, névoa leve e oclusão de ambiente.
 func _add_lights() -> void:
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-55, 30, 0)
+	sun.rotation_degrees = Vector3(-52, 35, 0)
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_energy = 1.5
 	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 60.0
 	add_child(sun)
 
-	var world := WorldEnvironment.new()
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.32, 0.5, 0.78)
+	sky_material.sky_horizon_color = Color(0.72, 0.8, 0.88)
+	sky_material.ground_horizon_color = Color(0.45, 0.5, 0.45)
+	sky_material.ground_bottom_color = Color(0.2, 0.24, 0.2)
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.12, 0.12, 0.16)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.5, 0.5, 0.6)
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.45
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 0.95
+	env.glow_enabled = true
+	env.glow_intensity = 0.8
+	env.glow_bloom = 0.0
+	env.glow_hdr_threshold = 1.1
+	env.ssao_enabled = true
+	env.ssao_intensity = 1.6
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.7, 0.78, 0.85)
+	env.fog_density = 0.0008
+	env.fog_sky_affect = 0.3
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.0
+	env.adjustment_contrast = 1.08
+	var world := WorldEnvironment.new()
 	world.environment = env
 	add_child(world)
+
+
+# Material do terreno (shader com variação de cor) a partir de uma cor base.
+# Superfícies largas e baixas viram gramado com manchas de terra; o resto, pedra.
+func _terrain_material(color: Color, ground: bool) -> ShaderMaterial:
+	var key := [color, ground]
+	if _terrain_materials.has(key):
+		return _terrain_materials[key]
+	var material := ShaderMaterial.new()
+	material.shader = TerrainShader
+	material.set_shader_parameter("color_a", color.darkened(0.12))
+	material.set_shader_parameter("color_b", color.lightened(0.1))
+	if ground:
+		material.set_shader_parameter("color_a", color.darkened(0.25))
+		material.set_shader_parameter("color_b", color.lightened(0.12))
+		material.set_shader_parameter("color_c", Color(0.42, 0.34, 0.22))
+		material.set_shader_parameter("scale", 0.25)
+		material.set_shader_parameter("patch_amount", 0.35)
+	else:
+		material.set_shader_parameter("color_c", Color(0.32, 0.4, 0.28))
+		material.set_shader_parameter("scale", 0.9)
+		material.set_shader_parameter("patch_amount", 0.15)
+	_terrain_materials[key] = material
+	return material
 
 
 # Faixa colorida no chão (só visual: rotas).
@@ -260,9 +329,10 @@ func _add_decal(at: Vector3, size: Vector2, color: Color) -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(size.x, 0.02, size.y)
 	mesh.mesh = box
-	mesh.material_override = E.make_material(color)
+	mesh.material_override = _terrain_material(color, true)
 	mesh.position = at + Vector3(0, 0.01, 0)
 	add_child(mesh)
+	map_lanes.append(Rect2(at.x - size.x / 2.0, at.z - size.y / 2.0, size.x, size.y))
 
 
 # Disco no chão (só visual: fontes).
@@ -273,13 +343,15 @@ func _add_disc(at: Vector3, radius: float, color: Color) -> void:
 	disc.bottom_radius = radius
 	disc.height = 0.03
 	mesh.mesh = disc
-	mesh.material_override = E.make_material(color)
+	mesh.material_override = Vfx.glow_material(Color(color, 1.0), 1.0, color.a)
 	mesh.position = at + Vector3(0, 0.02, 0)
 	add_child(mesh)
 
 
 # Bloco estático com a base em `at.y` (o chão tem o topo em y = 0).
-func _add_block(parent: Node, at: Vector3, size: Vector3, color: Color) -> void:
+# style: "stone" (bloco de pedra visível), "trees" (fileira de árvores),
+# "rocks" (pedras) ou "mountain" (morro com árvores). A colisão é sempre o bloco.
+func _add_block(parent: Node, at: Vector3, size: Vector3, color: Color, style := "stone") -> void:
 	var block := StaticBody3D.new()
 	block.position = at + Vector3(0, size.y / 2.0, 0)
 	var collision := CollisionShape3D.new()
@@ -291,6 +363,45 @@ func _add_block(parent: Node, at: Vector3, size: Vector3, color: Color) -> void:
 	var box := BoxMesh.new()
 	box.size = size
 	mesh.mesh = box
-	mesh.material_override = E.make_material(color)
+	mesh.material_override = _terrain_material(color, size.y <= 1.0 and size.x >= 20.0)
 	block.add_child(mesh)
 	parent.add_child(block)
+	if at.y >= 0.0:
+		map_walls.append(Rect2(at.x - size.x / 2.0, at.z - size.z / 2.0, size.x, size.z))
+	if style != "stone":
+		mesh.visible = false
+		_decorate(block, size, style)
+
+
+const MEDIEVAL := "res://assets/models/kaykit/medieval/"
+const DECOR := {
+	"trees": [["trees_A_large.gltf", "trees_B_large.gltf", "trees_A_medium.gltf", "trees_B_medium.gltf"], 2.4, 3.0],
+	"rocks": [["mountain_A_grass_trees.gltf", "mountain_B_grass_trees.gltf"], 1.1, 2.0],
+	"mountain": [["mountain_A_grass_trees.gltf", "mountain_B_grass_trees.gltf", "hills_A_trees.gltf"], 2.6, 4.0],
+}
+var _decor_scenes := {}
+
+
+# Modelos (KayKit Medieval Hexagon, CC0) ao longo do comprimento do bloco.
+# Posições e giros vêm de um sorteio com semente fixa: iguais em todos os PCs.
+func _decorate(block: Node3D, size: Vector3, style: String) -> void:
+	var config: Array = DECOR[style]
+	var files: Array = config[0]
+	var scale_factor: float = config[1]
+	var spacing: float = config[2]
+	var along_x := size.x >= size.z
+	var length := size.x if along_x else size.z
+	var count := maxi(int(length / spacing), 1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(block.position)
+	for i in count:
+		var t := (i + 0.5) / count - 0.5
+		var offset := Vector3(t * length, -size.y / 2.0, 0) if along_x else Vector3(0, -size.y / 2.0, t * length)
+		var file: String = files[rng.randi() % files.size()]
+		if not _decor_scenes.has(file):
+			_decor_scenes[file] = load(MEDIEVAL + file)
+		var decor: Node3D = _decor_scenes[file].instantiate()
+		decor.position = offset
+		decor.rotation.y = rng.randf() * TAU
+		decor.scale = Vector3.ONE * scale_factor * rng.randf_range(0.85, 1.15)
+		block.add_child(decor)

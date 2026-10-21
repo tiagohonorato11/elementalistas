@@ -30,6 +30,7 @@ var _autostart := 0
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
+	Audio.music("menu")
 	Network.players_changed.connect(_refresh)
 	Network.connected.connect(func(): _set_state(State.CONNECTED))
 	Network.connection_failed.connect(_on_connection_failed)

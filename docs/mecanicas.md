@@ -134,7 +134,7 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 
 **Tropas** (`minion.gd`): a cada 30 s (a primeira aos 15 s), cada time solta 3 tropas corpo a corpo e 2 atiradoras em cada rota. Elas seguem a rota e atacam o inimigo mais próximo: outras tropas primeiro, depois campeões e por fim estruturas desprotegidas.
 
-**Selva** (time neutro): 2 Lobos e 1 Golem de cada lado e o **Guardião** no fosso central. Ficam parados até levar dano, perseguem quem estiver perto e, se você fugir para longe do acampamento, voltam e se curam.
+**Selva** (time neutro): 2 Carniçais e 1 Golem de cada lado e o **Guardião** no fosso central. Ficam parados até levar dano, perseguem quem estiver perto e, se você fugir para longe do acampamento, voltam e se curam.
 - Golem: dá a **Fúria do Golem** (+20% de dano por 60 s) a quem estiver perto. Renasce em 90 s.
 - Guardião (3200 de vida): o time de quem estava mais perto ganha a **Bênção do Guardião** (+25% de dano e +0,5 de velocidade por 120 s) e 150 de ouro cada. Renasce em 3 min.
 

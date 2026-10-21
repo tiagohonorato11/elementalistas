@@ -10,6 +10,17 @@ const E = preload("res://scripts/core/elements.gd")
 const Health = preload("res://scripts/core/health.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
+const HealthBar = preload("res://scripts/vfx/health_bar.gd")
+const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
+
+const MEDIEVAL := "res://assets/models/kaykit/medieval/"
+# Modelo e escala por estrutura (KayKit Medieval Hexagon, CC0). O inibidor é um cristal.
+const LOOKS := {
+	"tower": ["building_tower_A_%s.gltf", 2.1],
+	"nexus_tower": ["building_tower_B_%s.gltf", 2.0],
+	"nexus": ["building_castle_%s.gltf", 1.5],
+}
 
 const KINDS := {
 	"tower": {"label": "Torre", "hp": 2200.0, "radius": 1.2, "height": 4.5},
@@ -31,6 +42,8 @@ var label: Label3D
 var body_mesh: MeshInstance3D
 var collision: CollisionShape3D
 var target: Node3D
+var model: Node3D
+var ruin: Node3D
 var shot_timer := 0.0
 var _shown_dead := false
 
@@ -51,7 +64,7 @@ func _ready() -> void:
 	add_child(collision)
 
 	body_mesh = MeshInstance3D.new()
-	if kind == "tower":
+	if kind == "tower" or kind == "nexus":
 		var cylinder := CylinderMesh.new()
 		cylinder.top_radius = radius * 0.7
 		cylinder.bottom_radius = radius
@@ -73,15 +86,27 @@ func _ready() -> void:
 	body_mesh.material_override = E.make_material(color.darkened(0.2))
 	add_child(body_mesh)
 
-	if kind == "tower":
-		var top := MeshInstance3D.new()
-		var orb := SphereMesh.new()
-		orb.radius = 0.5
-		orb.height = 1.0
-		top.mesh = orb
-		top.position.y = height + 0.3
-		top.material_override = E.make_material(color.lightened(0.3))
-		add_child(top)
+	var look_id := "nexus_tower" if struct_id.ends_with("torre_nexus") else kind
+	if LOOKS.has(look_id):
+		body_mesh.visible = false
+		var look: Array = LOOKS[look_id]
+		var color_key := "blue" if team == Combat.BLUE else "red"
+		model = load(MEDIEVAL + (look[0] % color_key)).instantiate()
+		model.scale = Vector3.ONE * look[1]
+		add_child(model)
+		ruin = load(MEDIEVAL + "building_destroyed.gltf").instantiate()
+		ruin.scale = Vector3.ONE * look[1] * 0.9
+		ruin.visible = false
+		add_child(ruin)
+	else:
+		# Inibidor: cristal brilhante girando, com partículas.
+		body_mesh.material_override = Vfx.glow_material(color, 2.0, 0.9)
+		var sparks := Vfx.emitter(E.Type.ARCANE if team == Combat.RED else E.Type.LIGHTNING,
+			{"amount": 20, "lifetime": 1.0, "speed": 1.0, "sphere": radius, "size_scale": 1.2})
+		sparks.position.y = height / 2.0
+		sparks.emitting = true
+		add_child(sparks)
+	Vfx.add_ring(self, color, radius + 0.8)
 
 	health = Health.new()
 	health.name = "Health"
@@ -89,8 +114,16 @@ func _ready() -> void:
 	health.immune_status = true
 	add_child(health)
 
+	var bar := HealthBar.new()
+	bar.width = 2.6
+	bar.height_above = height + 1.4
+	add_child(bar)
+	var sounds := UnitSounds.new()
+	sounds.material = "stone"
+	add_child(sounds)
+
 	label = Label3D.new()
-	label.position.y = height + 1.2
+	label.position.y = height + 2.0
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.font_size = 40
 	label.modulate = color.lightened(0.4)
@@ -104,7 +137,7 @@ func is_destroyed() -> bool:
 
 
 func _process(_delta: float) -> void:
-	var text := "%s %d" % [info.label, ceili(health.hp)]
+	var text: String = info.label
 	if health.dead:
 		text = "%s destruído" % info.label
 	elif health.invulnerable:
@@ -117,12 +150,19 @@ func _process(_delta: float) -> void:
 
 # Destruída: vira escombro baixo e dá para passar por cima.
 func _update_destroyed_visual() -> void:
-	body_mesh.scale = Vector3(1.0, 0.15, 1.0) if health.dead else Vector3.ONE
-	body_mesh.transparency = 0.4 if health.dead else 0.0
 	collision.disabled = health.dead
+	if model != null:
+		model.visible = not health.dead
+		ruin.visible = health.dead
+	else:
+		body_mesh.scale = Vector3(1.0, 0.15, 1.0) if health.dead else Vector3.ONE
+		body_mesh.transparency = 0.4 if health.dead else 0.0
 	for child in get_children():
-		if child is MeshInstance3D and child != body_mesh:
-			child.visible = not health.dead
+		if child is GPUParticles3D:
+			child.emitting = not health.dead
+	if health.dead:
+		Vfx.burst(get_parent(), global_position + Vector3.UP * 2.0, E.Type.EARTH, 80, 1.5, 6.0)
+		Vfx.burst(get_parent(), global_position + Vector3.UP * 2.0, E.Type.STEAM, 40, 1.5, 3.0)
 
 
 # Volta inteira (inibidor renascendo).
@@ -188,8 +228,10 @@ func show_shot(at: Vector3) -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(0.15, 0.15, from.distance_to(to))
 	beam.mesh = box
-	beam.material_override = E.make_material(Combat.TEAM_COLORS[team].lightened(0.5))
+	beam.material_override = Vfx.glow_material(Combat.TEAM_COLORS[team].lightened(0.4), 4.0)
 	get_parent().add_child(beam)
 	beam.global_position = (from + to) / 2.0
 	beam.look_at(to, Vector3.UP)
 	get_tree().create_timer(0.12).timeout.connect(beam.queue_free)
+	Vfx.burst(get_parent(), to, E.Type.LIGHTNING if team == Combat.BLUE else E.Type.FIRE, 16, 0.2, 3.0)
+	Audio.play("tower_shot", from)

@@ -25,11 +25,30 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", 10)
 	center.add_child(column)
 
-	var title := _label(column, "Configurações — Teclas", 36)
+	var title := _label(column, "Configurações", 36)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
+	# Volumes: Música, Efeitos e Ambiente (salvos ao voltar).
+	var volumes := GridContainer.new()
+	volumes.columns = 2
+	volumes.add_theme_constant_override("h_separation", 16)
+	column.add_child(volumes)
+	for bus in Audio.BUSES:
+		var name_label := _label(volumes, Audio.BUS_LABELS[bus], 18)
+		name_label.custom_minimum_size = Vector2(160, 0)
+		var slider := HSlider.new()
+		slider.min_value = 0.0
+		slider.max_value = 1.0
+		slider.step = 0.05
+		slider.value = Audio.volumes[bus]
+		slider.custom_minimum_size = Vector2(420, 28)
+		slider.value_changed.connect(func(value): Audio.set_volume(bus, value))
+		volumes.add_child(slider)
+
+	_label(column, "Teclas", 24)
+
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(620, 470)
+	scroll.custom_minimum_size = Vector2(620, 360)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(scroll)
 
@@ -101,6 +120,7 @@ func _on_reset_pressed() -> void:
 
 
 func _on_back_pressed() -> void:
+	Audio.save_settings()
 	get_tree().change_scene_to_file(LOBBY_SCENE)
 
 

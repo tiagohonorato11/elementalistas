@@ -62,11 +62,30 @@ Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):
 godot --headless --path . res://tests/flow_smoke.tscn
 ```
 
+Capturas de tela para conferir o visual (abre uma janela por alguns segundos):
+```
+godot --path . res://tests/screenshot.tscn -- --mode=arena --zoom=0.7 --out=C:/pasta/captura
+godot --path . res://tests/screenshot.tscn -- --mode=moba --out=C:/pasta/captura
+```
+
+Teste do áudio (abre uma janela: no modo headless o som fica mudo):
+```
+godot --path . res://tests/audio_smoke.tscn
+```
+
+## Créditos
+Modelos 3D, texturas e animações de personagens, esqueletos, construções e natureza: **KayKit, de Kay Lousberg** (www.kaylousberg.com), licença **CC0**. Detalhes em `assets/models/kaykit/CREDITOS.md`. Efeitos, terreno e todo o código são próprios do projeto.
+
+Áudio: músicas CC0 do OpenGameArt (bojidar-bg, haeldb, cynicmusic, emmama), efeitos CC0 da **Kenney** (www.kenney.nl) e sons de feitiços/ambiente sintetizados pelo projeto. Detalhes em `assets/audio/CREDITOS.md`.
+
 ## Estrutura
 - `scripts/core/`: regras puras (elementos, fila, forma do feitiço, vida). Ficam fora da cena para serem testáveis e, na Fase 3, rodarem só no host.
 - `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
 - `scripts/moba/`: modo MOBA: mapa, estruturas, tropas, estado da partida, ouro/níveis/loja e bots.
-- `scripts/ui/`: teclas configuráveis (autoload `Keybinds`) e tela de configurações.
+- `scripts/vfx/`: visual: partículas dos elementos, efeitos de feitiços e estados, modelos animados das unidades e barras de vida.
+- `scripts/audio/`: som: autoload `Audio` (efeitos 3D, loops, música com troca calma/combate/chefe, volumes), sons das unidades e dos eventos da partida.
+- `assets/`: modelos KayKit (CC0), áudio (CC0) e o shader do terreno.
+- `scripts/ui/`: teclas configuráveis (autoload `Keybinds`), tela de configurações (teclas e volumes) e minimapa.
 - `scripts/net/`: rede: lobby, conexão ENet, descoberta na LAN e sincronização.
 - `docs/mecanicas.md`: documento de design.
 
@@ -77,4 +96,5 @@ godot --headless --path . res://tests/flow_smoke.tscn
 - ✅ Fase 4: arena com obstáculos, 4 inimigos, 5 ondas, cair/reviver, vitória/derrota.
 - ✅ Classes: Mago, Assassino e Lutador, escolhidas no lobby.
 - ✅ Modo MOBA 3v3: torres, inibidores, nexus, tropas, selva, Guardião, ouro, níveis, loja, reaparecer e bots.
-- ⬜ Fases 5–6: arte, som, polimento.
+- ✅ Fase 5 (visual e som): partículas por elemento, céu e iluminação, personagens e esqueletos animados (KayKit), torres/castelo, árvores e montanhas, barras de vida, ícones dos elementos, minimapa, efeitos sonoros 3D, ambiente e música que muda em combate e perto do Guardião.
+- ⬜ Fase 6: polimento.

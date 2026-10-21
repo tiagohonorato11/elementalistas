@@ -22,6 +22,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 Network="*res://scripts/net/network_manager.gd"
 Keybinds="*res://scripts/ui/keybinds.gd"
+Audio="*res://scripts/audio/audio_manager.gd"
 
 [display]
 

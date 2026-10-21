@@ -8,6 +8,22 @@ const E = preload("res://scripts/core/elements.gd")
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 const Combat = preload("res://scripts/core/combat.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
+const StatusFx = preload("res://scripts/vfx/status_fx.gd")
+const UnitModel = preload("res://scripts/vfx/unit_model.gd")
+const HealthBar = preload("res://scripts/vfx/health_bar.gd")
+const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
+
+# Modelo (esqueletos KayKit) e animação de ataque de cada tipo.
+const LOOKS := {
+	"grunt": ["skeleton_minion", "1H_Melee_Attack_Chop"],
+	"archer": ["skeleton_mage", "Spellcast_Shoot"],
+	"salamander": ["skeleton_rogue", "Dualwield_Melee_Attack_Slice"],
+	"brute": ["skeleton_warrior", "2H_Melee_Attack_Chop"],
+	"jungle_wolf": ["skeleton_rogue", "Dualwield_Melee_Attack_Stab"],
+	"jungle_golem": ["skeleton_warrior", "2H_Melee_Attack_Chop"],
+	"boss": ["skeleton_mage", "Spellcast_Long"],
+}
 
 const GRAVITY := 20.0
 const RETARGET_TIME := 0.5
@@ -40,7 +56,7 @@ const KINDS := {
 	},
 	# Selva do MOBA.
 	"jungle_wolf": {
-		"label": "Lobo", "hp": 320.0, "speed": 3.8, "scale": 0.9, "color": Color(0.5, 0.5, 0.55),
+		"label": "Carniçal", "hp": 320.0, "speed": 3.8, "scale": 0.9, "color": Color(0.5, 0.5, 0.55),
 		"range": 1.6, "cooldown": 1.0, "damage": 18.0, "elements": [], "resist": {},
 		"gold": 35, "xp": 40,
 	},
@@ -68,6 +84,8 @@ var agent: NavigationAgent3D
 var target: Node3D
 var attack_timer := 1.0
 var push_velocity := Vector3.ZERO
+var action_anim := ""          # animação de ataque, sincronizada pelo host
+var action_count := 0
 var _retarget_timer := 0.0
 var _repath_timer := 0.0
 
@@ -86,23 +104,18 @@ func _ready() -> void:
 	collision.position.y = 0.9 * size
 	add_child(collision)
 
-	var body := MeshInstance3D.new()
-	var mesh := CapsuleMesh.new()
-	mesh.radius = capsule.radius
-	mesh.height = capsule.height
-	body.mesh = mesh
-	body.position.y = collision.position.y
-	body.material_override = E.make_material(info.color)
-	add_child(body)
-
-	# Olhos para mostrar a frente (-Z).
-	var eyes := MeshInstance3D.new()
-	var eyes_mesh := BoxMesh.new()
-	eyes_mesh.size = Vector3(0.5, 0.12, 0.12) * size
-	eyes.mesh = eyes_mesh
-	eyes.position = Vector3(0.0, 1.45 * size, -0.4 * size)
-	eyes.material_override = E.make_material(Color(1.0, 0.95, 0.3))
-	add_child(eyes)
+	var unit_model := UnitModel.new()
+	unit_model.model_id = LOOKS[kind][0]
+	unit_model.unit_height = 1.9 * size
+	add_child(unit_model)
+	# Cor do tipo no chão (e chamas permanentes na Salamandra).
+	Vfx.add_ring(self, info.color, capsule.radius + 0.3)
+	if kind == "salamander":
+		var aura := Vfx.emitter(E.Type.FIRE, {"amount": 16, "lifetime": 0.5, "speed": 1.2,
+			"box": Vector3(0.3, 0.6, 0.3), "size_scale": 1.2})
+		aura.position.y = 0.9
+		aura.emitting = true
+		add_child(aura)
 
 	health = Health.new()
 	health.name = "Health"
@@ -110,8 +123,23 @@ func _ready() -> void:
 	health.resistances = info.resist
 	add_child(health)
 
+	var status_fx := StatusFx.new()
+	status_fx.height = 1.8 * size
+	status_fx.radius = 0.45 * size
+	add_child(status_fx)
+
+	var bar := HealthBar.new()
+	bar.width = 1.0 * size
+	bar.height_above = 2.0 * size + 0.2
+	add_child(bar)
+	var sounds := UnitSounds.new()
+	sounds.material = "bone"
+	sounds.attack_sound = "" if info.has("projectile") else "slash"
+	sounds.attack_volume = -4.0 if kind == "boss" or kind == "brute" or kind == "jungle_golem" else -8.0
+	add_child(sounds)
+
 	label = Label3D.new()
-	label.position.y = 2.2 * size
+	label.position.y = 2.0 * size + 0.55
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.font_size = 36
 	add_child(label)
@@ -130,11 +158,12 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:position", ".:rotation",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
+		".:action_anim", ".:action_count",
 	])
 
 
 func _process(_delta: float) -> void:
-	label.text = "%s %d\n%s" % [info.label, ceili(health.hp), health.status_text()]
+	label.text = "%s\n%s" % [info.label, health.status_text()]
 
 
 func is_neutral() -> bool:
@@ -210,6 +239,8 @@ func _path_direction(delta: float) -> Vector3:
 
 func _attack() -> void:
 	attack_timer = info.cooldown
+	action_anim = LOOKS[kind][1]
+	action_count += 1
 	if info.has("projectile"):
 		var forward := -global_transform.basis.z
 		get_parent().spawn_entity({
@@ -289,3 +320,11 @@ func _return_to_camp() -> Vector3:
 	if not returning and not aggressive:
 		return Vector3.ZERO
 	return to_camp.normalized()
+
+
+# Ao sumir (morte), uma nuvem de poeira em todos os PCs.
+func _exit_tree() -> void:
+	var parent := get_parent()
+	if parent != null and not parent.is_queued_for_deletion():
+		Vfx.burst(parent, global_position + Vector3.UP * 0.8, E.Type.STEAM, 20, 0.5, 2.0)
+		Audio.play("death_bone", global_position)

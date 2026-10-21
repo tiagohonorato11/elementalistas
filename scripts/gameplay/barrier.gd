@@ -7,6 +7,7 @@ extends StaticBody3D
 
 const E = preload("res://scripts/core/elements.gd")
 const Combat = preload("res://scripts/core/combat.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
 
 const LIFETIME := 6.0
 const STONE_LIFETIME := 12.0
@@ -49,8 +50,24 @@ func _ready() -> void:
 	box.size = size
 	mesh.mesh = box
 	mesh.position.y = size.y / 2.0
-	mesh.material_override = E.make_material(color)
+	if stone:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = color.darkened(0.1)
+		material.roughness = 1.0
+		mesh.material_override = material
+	else:
+		# Escudo: parede translúcida que brilha na cor do elemento.
+		mesh.material_override = Vfx.glow_material(Color(color, 1.0), 1.2, 0.35)
 	add_child(mesh)
+	# Paredes elementais soltam partículas do elemento ao longo do comprimento.
+	for element in hazard.slice(0, 2):
+		var particles := Vfx.emitter(element, {"amount": 50, "lifetime": 0.7, "speed": 1.2,
+			"box": Vector3(size.x / 2.0, size.y / 3.0, size.z), "size_scale": 1.2})
+		particles.position.y = size.y / 3.0
+		particles.emitting = true
+		add_child(particles)
+	Vfx.burst(get_parent(), global_position + Vector3.UP, hazard[0] if not hazard.is_empty() else E.Type.SHIELD, 20, 1.0, 2.0)
+	Audio.play("stone_up" if stone else "shield_up", self)
 
 	if not multiplayer.is_server():
 		return

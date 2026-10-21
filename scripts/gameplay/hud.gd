@@ -8,6 +8,7 @@ const Specials = preload("res://scripts/core/specials.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
+const Minimap = preload("res://scripts/ui/minimap.gd")
 
 const ELEMENT_ACTION_IDS := {
 	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
@@ -25,19 +26,31 @@ var _recipe_keys := {}   # id do especial -> teclas da receita (ex.: "V C V C")
 var shop_panel: PanelContainer
 var shop_status: Label
 var shop_buttons := {}   # id do item -> Button
+var _slots: Array = []   # [PanelContainer, Label] dos 5 espaços da fila
+
+const SHORT_NAMES := {
+	E.Type.WATER: "Água", E.Type.LIFE: "Vida", E.Type.SHIELD: "Esc.", E.Type.COLD: "Frio",
+	E.Type.LIGHTNING: "Raio", E.Type.ARCANE: "Arc.", E.Type.EARTH: "Terra", E.Type.FIRE: "Fogo",
+	E.Type.STEAM: "Vapor", E.Type.ICE: "Gelo",
+}
 
 
 func _ready() -> void:
 	status_label = _make_label(26)
 	status_label.position = Vector2(16, 16)
-	var help := _make_label(16)
-	help.position = Vector2(16, 630)
+	var help := _make_label(15)
+	help.position = Vector2(16, 676)
 	help.text = _help_text()
+	_build_queue_row()
+	_build_legend_row()
+	var minimap := Minimap.new()
+	minimap.main = get_parent()
+	add_child(minimap)
 
-	wave_label = _make_label(26)
+	wave_label = _make_label(21)
 	wave_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	wave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	wave_label.offset_left = -420
+	wave_label.offset_left = -760
 	wave_label.offset_right = -16
 	wave_label.offset_top = 16
 
@@ -64,6 +77,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_status()
+	_update_queue_row()
 	if game_state is MobaState:
 		_update_moba()
 	else:
@@ -161,10 +175,6 @@ func _update_status() -> void:
 	if not is_instance_valid(player):
 		status_label.text = "Aguardando jogadores..."
 		return
-	var names := PackedStringArray()
-	for element in player.queue_view:
-		names.append(E.NAMES[element])
-	var queue_text := "(vazia)" if names.is_empty() else ", ".join(names)
 	var shape := SpellResolver.resolve_shape(player.queue_view)
 	var spell_text: String = SpellResolver.SHAPE_NAMES[shape]
 	var special := Specials.match_special(player.queue_view)
@@ -185,9 +195,8 @@ func _update_status() -> void:
 		class_text += " | Arma: %s x%d" % [", ".join(weapon_names), player.weapon_charges]
 	if player.invisible > 0.0:
 		class_text += " | INVISÍVEL"
-	status_label.text = "%s\nFila: %s\nFeitiço: %s\nVida: %d/%d %s\nJogadores: %d" % [
+	status_label.text = "%s\nFeitiço: %s\nVida: %d/%d %s\nJogadores: %d" % [
 		class_text,
-		queue_text,
 		spell_text,
 		ceili(player.health.hp),
 		ceili(player.health.max_hp),
@@ -235,14 +244,93 @@ func _update_wave() -> void:
 		banner.text = "Você caiu!\nUm aliado pode te reviver com Vida."
 
 
+# --- Fila e legenda dos elementos (embaixo, no centro) -----------------------
+
+func _slot_style(color: Color, filled: bool, radius: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(color, 0.92 if filled else 0.18)
+	style.border_color = color.lightened(0.4) if filled else Color(1, 1, 1, 0.25)
+	style.set_border_width_all(3 if filled else 2)
+	style.set_corner_radius_all(radius)
+	return style
+
+
+func _icon(parent: Control, size: Vector2, font_size: int) -> Array:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = size
+	var label := Label.new()
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 4)
+	panel.add_child(label)
+	parent.add_child(panel)
+	return [panel, label]
+
+
+func _bottom_row(top: float, bottom: float) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	row.offset_left = -320
+	row.offset_right = 320
+	row.offset_top = top
+	row.offset_bottom = bottom
+	add_child(row)
+	return row
+
+
+func _build_queue_row() -> void:
+	var row := _bottom_row(-178, -118)
+	for i in 5:
+		_slots.append(_icon(row, Vector2(60, 60), 16))
+
+
+# Legenda: tecla de cada elemento na cor dele.
+func _build_legend_row() -> void:
+	var row := _bottom_row(-108, -78)
+	for element in ELEMENT_ACTION_IDS:
+		var icon := _icon(row, Vector2(62, 30), 14)
+		icon[0].add_theme_stylebox_override("panel", _slot_style(E.COLORS[element], true, 8))
+		icon[1].text = "%s %s" % [Keybinds.action_text(ELEMENT_ACTION_IDS[element]), SHORT_NAMES[element]]
+
+
+const ELEMENT_SOUNDS := {
+	E.Type.WATER: "element_water", E.Type.LIFE: "element_life", E.Type.SHIELD: "element_shield",
+	E.Type.COLD: "element_cold", E.Type.LIGHTNING: "element_lightning", E.Type.ARCANE: "element_arcane",
+	E.Type.EARTH: "element_earth", E.Type.FIRE: "element_fire", E.Type.STEAM: "element_water",
+	E.Type.ICE: "element_cold",
+}
+var _last_queue: Array = []
+
+
+func _update_queue_row() -> void:
+	var queue: Array = player.queue_view if is_instance_valid(player) else []
+	if queue != _last_queue:
+		# Cresceu ou mudou (fusão Água+Fogo = Vapor): toca o último elemento.
+		if not queue.is_empty() and (queue.size() >= _last_queue.size()):
+			Audio.play(ELEMENT_SOUNDS.get(queue[-1], "select"), null, 0.0)
+		_last_queue = queue.duplicate()
+	for i in _slots.size():
+		var panel: PanelContainer = _slots[i][0]
+		var label: Label = _slots[i][1]
+		var filled := i < queue.size()
+		var element: int = queue[i] if filled else -1
+		var key := "%d" % element
+		if panel.get_meta("shown", "") == key:
+			continue
+		panel.set_meta("shown", key)
+		var color: Color = E.COLORS[element] if filled else Color(0.2, 0.2, 0.25)
+		panel.add_theme_stylebox_override("panel", _slot_style(color, filled, 30))
+		label.text = SHORT_NAMES[element] if filled else ""
+
+
 # Ajuda montada com as teclas que o jogador configurou.
 func _help_text() -> String:
-	var elements := PackedStringArray()
-	for element in ELEMENT_ACTION_IDS:
-		elements.append("%s %s" % [Keybinds.action_text(ELEMENT_ACTION_IDS[element]), E.NAMES[element]])
 	var k := func(id): return Keybinds.action_text(id)
 	var lines := PackedStringArray([
-		"Elementos: " + " | ".join(elements),
 		"Andar: %s no chão | Lançar: monte a combinação e espere 1 s (mira no mouse) | Golpe: %s" % [
 			k.call("move_to_cursor"), k.call("cast_weapon")],
 		"Área: %s | Em si mesmo: %s | Especial: %s | Habilidade: %s | Esc: sair para o lobby" % [

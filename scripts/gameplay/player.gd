@@ -13,6 +13,20 @@ const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const BotBrain = preload("res://scripts/moba/bot_brain.gd")
+const Vfx = preload("res://scripts/vfx/vfx.gd")
+const SpellFx = preload("res://scripts/vfx/spell_fx.gd")
+const StatusFx = preload("res://scripts/vfx/status_fx.gd")
+const UnitModel = preload("res://scripts/vfx/unit_model.gd")
+const HealthBar = preload("res://scripts/vfx/health_bar.gd")
+const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
+
+# Animação de golpe de cada classe (modelos KayKit).
+const MELEE_ANIMS := {
+	"mage": "1H_Melee_Attack_Chop", "assassin": "Dualwield_Melee_Attack_Stab", "fighter": "2H_Melee_Attack_Chop",
+}
+const ABILITY_ANIMS := {
+	"arcane_shield": "Spellcast_Raise", "shadow_step": "Dodge_Forward", "charge": "2H_Melee_Attack_Spin",
+}
 const Health = preload("res://scripts/core/health.gd")
 const SyncUtil = preload("res://scripts/net/sync_util.gd")
 
@@ -108,6 +122,7 @@ var push_velocity := Vector3.ZERO   # empurrão, aplicado pelo dono no movimento
 var queue_view: Array = []
 var fx_shape: int = SpellResolver.Shape.NONE
 var fx_element := 0
+var fx_elements: Array = []   # elementos do feitiço contínuo (para os efeitos visuais)
 var fx_length := 0.0   # comprimento do efeito; no projétil, a carga (0 a 1)
 var fx_width := 0.3
 var special_cooldowns := {}
@@ -142,11 +157,10 @@ var move_target := Vector3.ZERO
 var has_move_target := false
 var _stuck_time := 0.0
 
-var body: MeshInstance3D
-var body_parts: Array = []    # corpo + acessórios (ficam transparentes juntos)
-var effect_mesh: MeshInstance3D
-var _shown_fx_element := -1
-var _shown_dead := false
+var unit_model: Node3D
+# Ação pontual para a animação (golpe, tiro, feitiço), sincronizada pelo host.
+var action_anim := ""
+var action_count := 0
 
 
 func _ready() -> void:
@@ -168,15 +182,20 @@ func _ready() -> void:
 		if moba:
 			_recompute_stats()
 
-	effect_mesh = MeshInstance3D.new()
-	effect_mesh.mesh = BoxMesh.new()
-	effect_mesh.visible = false
-	add_child(effect_mesh)
+	add_child(SpellFx.new())
+	var status_fx := StatusFx.new()
+	status_fx.height = 2.0
+	add_child(status_fx)
+	var bar := HealthBar.new()
+	bar.width = 1.4
+	bar.height_above = 2.35
+	add_child(bar)
 
 	SyncUtil.add_sync(self, "MoveSync", peer_id, [".:position", ".:rotation"])
 	SyncUtil.add_sync(self, "StateSync", 1, [
-		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_length", ".:fx_width", ".:special_cooldowns",
+		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_elements", ".:fx_length", ".:fx_width", ".:special_cooldowns",
 		".:ability_cooldown", ".:weapon_elements", ".:weapon_charges", ".:invisible", ".:auto_cast_timer",
+		".:action_anim", ".:action_count",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements", "Health:max_hp",
 		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
@@ -200,7 +219,8 @@ func _ready() -> void:
 		add_child(brain)
 
 
-# Gray-box: a cor identifica o jogador; o formato e os acessórios, a classe.
+# Modelo animado da classe (KayKit), com um anel no chão na cor do jogador
+# (Arena) ou do time (MOBA) e o nome da classe acima da cabeça.
 func _build_body() -> void:
 	var radius := 0.5
 	if class_id == "assassin":
@@ -215,49 +235,30 @@ func _build_body() -> void:
 	collision.position.y = 1.0
 	add_child(collision)
 
-	body = MeshInstance3D.new()
-	var capsule_mesh := CapsuleMesh.new()
-	capsule_mesh.radius = radius
-	body.mesh = capsule_mesh
-	body.position.y = 1.0
+	unit_model = UnitModel.new()
+	unit_model.model_id = class_id
+	unit_model.unit_height = 2.0
+	add_child(unit_model)
+
 	var color: Color = PLAYER_COLORS[color_index % PLAYER_COLORS.size()]
 	if moba:
-		# MOBA: a cor do time, em tons diferentes para cada campeão.
-		color = Combat.TEAM_COLORS[team].darkened(0.15 * (color_index % 3))
-	body.material_override = E.make_material(color)
-	add_child(body)
-	body_parts = [body]
-
-	# "Nariz" para mostrar para onde o personagem está virado (-Z).
-	_add_part(BoxMesh.new(), Vector3(0.2, 0.2, 0.5), Vector3(0.0, 0.5, -radius), Color(0.9, 0.9, 0.9))
-	if class_id == "mage":
-		var hat := CylinderMesh.new()
-		hat.top_radius = 0.0
-		hat.bottom_radius = 0.45
-		hat.height = 0.7
-		_add_part(hat, Vector3.ONE, Vector3(0.0, 1.3, 0.0), Color(0.3, 0.2, 0.5))
-	elif class_id == "assassin":
-		_add_part(BoxMesh.new(), Vector3(0.7, 0.18, 0.5), Vector3(0.0, 0.55, -0.1), Color(0.12, 0.12, 0.15))
-	elif class_id == "fighter":
-		_add_part(BoxMesh.new(), Vector3(1.5, 0.25, 0.55), Vector3(0.0, 0.6, 0.0), Color(0.55, 0.55, 0.6))
+		color = Combat.TEAM_COLORS[team]
+	Vfx.add_ring(self, color, radius + 0.35)
 
 	var label := Label3D.new()
 	label.text = cls.label
 	label.font_size = 28
+	label.outline_size = 6
+	label.modulate = color.lightened(0.3)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.position.y = 2.6
+	label.position.y = 2.75
 	add_child(label)
 
-
-func _add_part(mesh: PrimitiveMesh, size: Vector3, at: Vector3, color: Color) -> void:
-	if mesh is BoxMesh:
-		mesh.size = size
-	var part := MeshInstance3D.new()
-	part.mesh = mesh
-	part.position = at
-	part.material_override = E.make_material(color)
-	body.add_child(part)
-	body_parts.append(part)
+	var sounds := UnitSounds.new()
+	sounds.material = "flesh"
+	sounds.footsteps = true
+	sounds.is_local = is_local() and not is_bot
+	add_child(sounds)
 
 
 func is_local() -> bool:
@@ -299,20 +300,18 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
-	_update_effect_visual()
 	_update_body_visual()
 
 
-# Caído: o corpo deita e fica translúcido até alguém reviver com Vida.
-# Invisível (Passo sombrio): quase transparente.
+# Invisível (Passo sombrio): quase transparente. Caído: a animação de queda.
 func _update_body_visual() -> void:
-	if health.dead != _shown_dead:
-		_shown_dead = health.dead
-		body.rotation.x = PI / 2.0 if health.dead else 0.0
-		body.position.y = 0.5 if health.dead else 1.0
-	var alpha := 0.5 if health.dead else (0.8 if invisible > 0.0 else 0.0)
-	for part in body_parts:
-		part.transparency = alpha
+	unit_model.set_alpha(0.8 if invisible > 0.0 and not health.dead else 0.0)
+
+
+# Host: dispara uma animação pontual em todos os PCs.
+func _act(animation: String) -> void:
+	action_anim = animation
+	action_count += 1
 
 
 func _move_local(delta: float) -> void:
@@ -507,6 +506,7 @@ func request_ability(aim: Vector3) -> void:
 	elif cls.ability == "charge":
 		_ability_charge()
 	if used:
+		_act(ABILITY_ANIMS.get(cls.ability, "Spellcast_Raise"))
 		ability_cooldown = cls.ability_cooldown * cooldown_mult
 		# Usar uma habilidade também reinicia a espera do disparo automático.
 		if not queue.is_empty():
@@ -522,6 +522,7 @@ func request_special(target_point: Vector3) -> void:
 	if id.is_empty() or special_cooldowns.get(id, 0.0) > 0.0:
 		return
 	if _cast_special(id, target_point):
+		_act("Spellcast_Long")
 		var cooldowns := special_cooldowns.duplicate()
 		cooldowns[id] = Specials.SPECIALS[id].cooldown * cls.special_cooldown * cooldown_mult
 		special_cooldowns = cooldowns
@@ -581,6 +582,7 @@ func _cast_forward() -> void:
 	channel_limit = CHANNEL_MAX
 	fx_shape = shape
 	fx_element = elements[0]
+	fx_elements = elements
 	fx_length = 0.0
 
 
@@ -604,6 +606,7 @@ func _cast_area() -> void:
 			if water > 0 and offset.length() > 0.01:
 				_push(target, offset.normalized() * AREA_WATER_PUSH * water)
 	show_flash.rpc(global_position, AREA_RADIUS, elements[0])
+	_act("Spellcast_Raise")
 
 
 func _cast_self() -> void:
@@ -620,6 +623,7 @@ func _cast_self() -> void:
 			health.set_ward(others)
 		return
 	health.apply_elements(elements, 1.0)
+	_act("Use_Item")
 
 
 func _clear_queue() -> void:
@@ -691,6 +695,7 @@ func _swing_weapon() -> void:
 			weapon_elements = []
 	invisible = 0.0
 	show_swing.rpc(elements[0] if not elements.is_empty() else -1, _forward(), weapon.range)
+	_act(MELEE_ANIMS.get(class_id, "1H_Melee_Attack_Chop"))
 
 
 # Atacando pelas costas: o alvo está virado para o mesmo lado do golpe.
@@ -848,10 +853,12 @@ func _cancel_channel() -> void:
 	channel_shape = SpellResolver.Shape.NONE
 	channel_elements = []
 	fx_shape = SpellResolver.Shape.NONE
+	fx_elements = []
 	_clear_queue()
 
 
 func _fire_projectile(elements: Array, charge: float) -> void:
+	_act("Spellcast_Shoot")
 	get_parent().spawn_entity({
 		"type": "projectile",
 		"pos": global_position + Vector3.UP,
@@ -967,26 +974,6 @@ func do_teleport(destination: Vector3) -> void:
 
 # --- Visual (todos os peers) -------------------------------------------------
 
-func _update_effect_visual() -> void:
-	var active := fx_shape != SpellResolver.Shape.NONE
-	effect_mesh.visible = active
-	if not active:
-		return
-	if fx_element != _shown_fx_element:
-		var color: Color = E.COLORS[fx_element]
-		color.a = 0.5
-		effect_mesh.material_override = E.make_material(color)
-		_shown_fx_element = fx_element
-	var box := effect_mesh.mesh as BoxMesh
-	if fx_shape == SpellResolver.Shape.PROJECTILE:
-		# Carga: a pedra/gelo cresce na frente do mago.
-		box.size = Vector3.ONE * (0.25 + 0.45 * fx_length)
-		effect_mesh.position = Vector3(0.0, 1.0, -0.9)
-	else:
-		box.size = Vector3(fx_width, 0.3, maxf(fx_length, 0.01))
-		effect_mesh.position = Vector3(0.0, 1.0, -fx_length / 2.0)
-
-
 # Disco colorido rápido no chão (área, teleporte, bênção, inverno).
 @rpc("any_peer", "call_local", "reliable")
 func show_flash(at: Vector3, radius: float, element: int) -> void:
@@ -1000,10 +987,13 @@ func show_flash(at: Vector3, radius: float, element: int) -> void:
 	flash.mesh = disc
 	var color: Color = E.COLORS[element]
 	color.a = 0.4
-	flash.material_override = E.make_material(color)
+	flash.material_override = Vfx.glow_material(Color(color, 1.0), 1.5, 0.35)
 	get_parent().add_child(flash)
 	flash.global_position = Vector3(at.x, 0.05, at.z)
 	get_tree().create_timer(0.3).timeout.connect(flash.queue_free)
+	Audio.play("heal" if element == E.Type.LIFE else "area", at, minf(radius - 3.0, 3.0))
+	# Anel de partículas abrindo do centro.
+	Vfx.burst(get_parent(), Vector3(at.x, 0.4, at.z), element, int(clampf(radius * 14.0, 16.0, 90.0)), radius * 0.3, radius * 2.2)
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1015,28 +1005,38 @@ func show_swing(element: int, direction: Vector3, weapon_range: float) -> void:
 	box.size = Vector3(weapon_range * 1.2, 0.15, 0.4)
 	swing.mesh = box
 	var color: Color = E.COLORS[element] if element >= 0 else Color(0.9, 0.9, 0.95)
-	color.a = 0.7
-	swing.material_override = E.make_material(color)
+	swing.material_override = Vfx.glow_material(color, 2.0, 0.75)
 	get_parent().add_child(swing)
 	var center := global_position + direction.normalized() * (weapon_range * 0.6)
 	swing.global_position = Vector3(center.x, 1.0, center.z)
 	swing.look_at(swing.global_position + direction, Vector3.UP)
 	swing.rotate_object_local(Vector3.UP, PI / 2.0)
 	get_tree().create_timer(0.12).timeout.connect(swing.queue_free)
+	Audio.play("chop" if class_id == "fighter" else "slash", swing.global_position)
+	Audio.play("whoosh", swing.global_position, -4.0)
+	if element >= 0:
+		Vfx.burst(get_parent(), swing.global_position, element, 14, 0.5, 2.5)
 
 
 @rpc("any_peer", "call_local", "reliable")
 func show_bolt(at: Vector3) -> void:
 	if _sender() != 1:
 		return
+	# Raio em zigue-zague caindo do céu, com faíscas no chão.
+	var lines := ImmediateMesh.new()
+	lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+	for i in 13:
+		var jitter := Vector3(randf_range(-0.5, 0.5), 0, randf_range(-0.5, 0.5)) if i > 0 and i < 12 else Vector3.ZERO
+		lines.surface_add_vertex(Vector3(0, 12.0 - i, 0) + jitter)
+	lines.surface_end()
 	var bolt := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.25, 12.0, 0.25)
-	bolt.mesh = box
-	bolt.material_override = E.make_material(E.COLORS[E.Type.LIGHTNING])
+	bolt.mesh = lines
+	bolt.material_override = Vfx.glow_material(E.COLORS[E.Type.LIGHTNING], 5.0)
 	get_parent().add_child(bolt)
-	bolt.global_position = Vector3(at.x, 6.0, at.z)
+	bolt.global_position = Vector3(at.x, 0.0, at.z)
 	get_tree().create_timer(0.15).timeout.connect(bolt.queue_free)
+	Audio.play("bolt", bolt.global_position)
+	Vfx.burst(get_parent(), Vector3(at.x, 0.3, at.z), E.Type.LIGHTNING, 24, 0.3, 4.0)
 
 
 # --- Utilidades (host) -------------------------------------------------------
@@ -1080,6 +1080,7 @@ func _raycast(from: Vector3, to: Vector3) -> Dictionary:
 
 
 func _spawn_barrier(at: Vector3, elements: Array) -> void:
+	_act("Spellcast_Raise")
 	var offset := at - global_position
 	get_parent().spawn_entity({
 		"type": "barrier",
