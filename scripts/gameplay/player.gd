@@ -16,6 +16,8 @@ const Loadout = preload("res://scripts/core/loadout.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
+const WorldMap = preload("res://scripts/world/world_map.gd")
+const Quests = preload("res://scripts/world/quests.gd")
 const BotBrain = preload("res://scripts/moba/bot_brain.gd")
 const Vfx = preload("res://scripts/vfx/vfx.gd")
 const SpellFx = preload("res://scripts/vfx/spell_fx.gd")
@@ -193,6 +195,9 @@ var class_id := Classes.DEFAULT
 var cls: Dictionary          # dados da classe (classes.gd)
 var elements: Array = []     # os 3 elementos escolhidos no lobby (D F G)
 var moba := false            # modo MOBA: ouro, níveis, loja e reaparecer na base
+var world := false           # modo Mundo (RPG): ouro, níveis, loja, missões e reaparecer na vila
+var progression := false     # MOBA ou Mundo: tem ouro, xp, níveis e itens
+var quests := {}             # Mundo: progresso das missões (quests.gd)
 
 # MOBA (decidido pelo host e sincronizado).
 var gold := Progression.START_GOLD
@@ -283,20 +288,22 @@ func _ready() -> void:
 	cls = Classes.info(class_id)
 	elements = Loadout.sanitize(elements, class_id)
 	moba = Network.game_mode() == "moba"
+	world = Network.game_mode() == "world"
+	progression = moba or world
 	_build_body()
 
 	health = Health.new()
 	health.name = "Health"
 	health.max_hp = cls.hp
 	health.armor = cls.armor
-	# Arena: caído espera um aliado com Vida. MOBA: volta sozinho na base.
-	health.revivable = not moba
+	# Arena: caído espera um aliado com Vida. MOBA e Mundo: volta sozinho na base/vila.
+	health.revivable = not progression
 	add_child(health)
 	max_mana = cls.mana
 	mana = max_mana
 	if multiplayer.is_server():
 		health.died.connect(_on_died)
-		if moba:
+		if progression:
 			_recompute_stats()
 			mana = max_mana
 
@@ -320,6 +327,7 @@ func _ready() -> void:
 		"Health:vulnerable", "Health:fortified", "Health:blinded", "Health:blackout", "Health:bleeding",
 		"Health:lifesteal", "Health:barrier_hp", "Health:silenced", "Health:last_element",
 		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
+		".:quests",
 	])
 	set_multiplayer_authority(peer_id, false)
 
@@ -1208,7 +1216,7 @@ func do_dash(dash: Vector3, duration: float) -> void:
 # --- Atualização do host -----------------------------------------------------
 
 func _update_host(delta: float) -> void:
-	if moba:
+	if progression:
 		_update_moba(delta)
 	weapon_timer = maxf(weapon_timer - delta, 0.0)
 	invisible = maxf(invisible - delta, 0.0)
@@ -1228,7 +1236,7 @@ func _update_mana(delta: float) -> void:
 	if health.dead or mana >= max_mana:
 		return
 	var regen: float = cls.mana_regen
-	if moba and is_at_shop():
+	if progression and _at_base():
 		regen *= FOUNTAIN_MANA_MULT
 	mana = minf(mana + regen * delta, max_mana)
 
@@ -1747,13 +1755,15 @@ func _spawn_barrier(at: Vector3, elements: Array, yaw := NAN) -> void:
 	})
 
 
-# --- MOBA (host) -------------------------------------------------------------
+# --- MOBA e Mundo (host) ---------------------------------------------------------
 
 func _update_moba(delta: float) -> void:
 	if health.dead:
 		respawn_time -= delta
 		if respawn_time <= 0.0:
 			_respawn()
+		return
+	if not moba:
 		return
 	_gold_fraction += Progression.PASSIVE_GOLD * delta
 	if _gold_fraction >= 1.0:
@@ -1803,14 +1813,46 @@ func _recompute_stats() -> void:
 	cooldown_mult = stats.cooldown
 
 
+# Pode comprar: MOBA, na fonte da base; Mundo, perto do Ferreiro da vila. Caído também.
 func is_at_shop() -> bool:
-	return health.dead or global_position.distance_to(MobaMap.fountain(team)) \
-		<= MobaMap.FOUNTAIN_RADIUS + Progression.SHOP_EXTRA_RANGE
+	if health.dead:
+		return true
+	if world:
+		return global_position.distance_to(WorldMap.MERCHANT) <= WorldMap.TALK_RANGE
+	return global_position.distance_to(MobaMap.fountain(team)) <= MobaMap.FOUNTAIN_RADIUS + Progression.SHOP_EXTRA_RANGE
+
+
+# Na fonte (da base no MOBA, da vila no Mundo): a mana volta rápido.
+func _at_base() -> bool:
+	if world:
+		return global_position.distance_to(WorldMap.FOUNTAIN) <= WorldMap.FOUNTAIN_RADIUS
+	return is_at_shop()
+
+
+# Mundo: perto da Anciã (para aceitar e entregar missões).
+func near_elder() -> bool:
+	return world and not health.dead and global_position.distance_to(WorldMap.ELDER) <= WorldMap.TALK_RANGE
+
+
+# Mundo: aceitar a próxima missão ou entregar a atual (perto da Anciã).
+@rpc("any_peer", "call_local", "reliable")
+func request_quest(action: String) -> void:
+	if not multiplayer.is_server() or _sender() != peer_id or not near_elder():
+		return
+	if action == "accept":
+		quests = Quests.accept(quests, Quests.next_offer(quests))
+	elif action == "turn_in":
+		var id := Quests.active(quests)
+		if Quests.is_complete(quests, id):
+			quests = Quests.turn_in(quests, id)
+			var quest := Quests.info(id)
+			add_rewards(quest.gold, quest.xp)
+			play_sound.rpc("level_up")
 
 
 @rpc("any_peer", "call_local", "reliable")
 func request_buy(item_id: String) -> void:
-	if not moba or not multiplayer.is_server() or _sender() != peer_id:
+	if not progression or not multiplayer.is_server() or _sender() != peer_id:
 		return
 	if not Progression.cannot_buy(item_id, gold, items, is_at_shop()).is_empty():
 		return
@@ -1827,12 +1869,12 @@ func _respawn() -> void:
 	_recompute_stats()
 	health.hp = health.max_hp
 	mana = max_mana
-	var spot := MobaMap.spawn_point(team, color_index)
+	var spot := WorldMap.spawn_point(color_index) if world else MobaMap.spawn_point(team, color_index)
 	do_teleport.rpc_id(peer_id, spot)
 
 
 func _on_died() -> void:
-	if moba:
+	if progression:
 		respawn_time = Progression.respawn_time(level)
 	_cancel_channel()
 	_clear_queue()

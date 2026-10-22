@@ -14,6 +14,8 @@ const Meteor = preload("res://scripts/gameplay/meteor.gd")
 const Zone = preload("res://scripts/gameplay/zone.gd")
 const Dummy = preload("res://scripts/practice/dummy.gd")
 const PracticeState = preload("res://scripts/practice/practice_state.gd")
+const WorldState = preload("res://scripts/world/world_state.gd")
+const WorldMap = preload("res://scripts/world/world_map.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
@@ -44,7 +46,7 @@ var camera: Camera3D
 var hud: Hud
 var spawner: MultiplayerSpawner
 var local_player: Player
-var game_state: Node          # GameState (Arena), MobaState ou PracticeState (Treino)
+var game_state: Node          # GameState (Arena), MobaState, PracticeState (Treino) ou WorldState (Mundo)
 var mode := "arena"
 var zoom := 1.0               # rodinha do mouse: aproxima/afasta a câmera
 # Para o minimapa: metade do mapa (x, z), paredes e rotas como retângulos no chão.
@@ -89,7 +91,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if is_instance_valid(local_player):
-		var offset := MOBA_CAMERA_OFFSET if mode == "moba" else CAMERA_OFFSET
+		var offset := MOBA_CAMERA_OFFSET if mode == "moba" or mode == "world" else CAMERA_OFFSET
 		camera.global_position = local_player.global_position + offset * zoom
 		camera.look_at(local_player.global_position + Vector3.UP)
 		if _shake > 0.0:
@@ -133,6 +135,9 @@ func _on_all_loaded() -> void:
 	if mode == "moba":
 		_start_moba()
 		return
+	if mode == "world":
+		_start_world()
+		return
 	if mode == "practice":
 		spawn_entity({"type": "practice_state", "pos": Vector3.ZERO})
 	else:
@@ -143,6 +148,16 @@ func _on_all_loaded() -> void:
 			"elements": Network.elements_of(peer), "color": i, "pos": SPAWN_POINTS[i % SPAWN_POINTS.size()]})
 	if mode == "practice":
 		game_state.start()
+
+
+# Mundo: estado, personagens na vila e os acampamentos de monstros.
+func _start_world() -> void:
+	var state: Node = spawn_entity({"type": "world_state", "pos": Vector3.ZERO})
+	for i in Network.players.size():
+		var peer: int = Network.players[i]
+		spawn_entity({"type": "player", "id": peer, "class": Network.class_of(peer), "team": Combat.BLUE,
+			"elements": Network.elements_of(peer), "color": i, "pos": WorldMap.spawn_point(i)})
+	state.start(self)
 
 
 # MOBA: estado da partida, estruturas e selva, jogadores nos times e bots completando.
@@ -177,7 +192,7 @@ func spawn_entity(data: Dictionary) -> Node:
 	_entity_counter += 1
 	if data.type == "player":
 		data["name"] = ("Bot%d" if data.get("bot", false) else "Player%d") % data.id
-	elif data.type == "state" or data.type == "moba_state" or data.type == "practice_state":
+	elif data.type in ["state", "moba_state", "practice_state", "world_state"]:
 		data["name"] = "GameState"
 	elif data.type == "structure":
 		data["name"] = data.id
@@ -251,6 +266,10 @@ func _spawn_entity(data: Dictionary) -> Node:
 		game_state = MobaState.new()
 		hud.game_state = game_state
 		node = game_state
+	elif data.type == "world_state":
+		game_state = WorldState.new()
+		hud.game_state = game_state
+		node = game_state
 	elif data.type == "practice_state":
 		game_state = PracticeState.new()
 		hud.game_state = game_state
@@ -286,6 +305,9 @@ func _build_world() -> void:
 	if mode == "moba":
 		map_half = MobaMap.HALF
 		MobaMap.build(self, region)
+	elif mode == "world":
+		map_half = WorldMap.HALF
+		WorldMap.build(self, region)
 	else:
 		_build_arena(region)
 

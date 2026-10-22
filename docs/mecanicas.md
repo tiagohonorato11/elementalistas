@@ -207,6 +207,34 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - **Cair e reviver:** com a vida em 0, o personagem cai, não age e não recebe dano. Um aliado o levanta com o **W** (mouse sobre ele), com qualquer elemento **Vida** nele ou com o ultimate **Bênção**.
 - **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo (só na tela de fim).
 
+## Modo Mundo (RPG) (`scripts/world/`)
+Terceiro modo, um mapa aberto estilo MMORPG que vai crescer aos poucos. Escolha **Modo: Mundo (RPG)** no lobby (sozinho ou com até 4 amigos). Não há fim de partida nem fogo amigo.
+
+**Mapa** (`world_map.gd`, 96 × 72 m):
+| Região | Onde | O que tem |
+|---|---|---|
+| Vila | sul | zona segura: fonte que cura (40/s) e recupera mana, casas, taverna, igreja, moinho; **Anciã Lira** (missões) e **Ferreiro Bruno** (loja) |
+| Campos | oeste | 3 grupos de **Carniçais** (140 de vida, fracos) |
+| Cemitério | leste | **Esqueletos** (200) e **Esqueletos arqueiros** (130, atiram gelo de longe) |
+| Bosque | noroeste | **Golem do bosque** (900; só reage se for atacado) |
+| Covil | norte | **Guardião do covil** (2200), o chefe, entre paredes de pedra |
+
+- **Monstros:** ficam no acampamento e **atacam quem chega perto** (Carniçal a 7 m, Esqueleto a 6 m, arqueiro a 9 m, Guardião a 8 m). Se você fugir para longe, voltam e se curam. Um grupo inteiro derrotado **renasce** depois de 25 s (Campos), 30 s (Cemitério), 60 s (Golem) ou 120 s (Guardião).
+- **Ouro e xp:** todo mundo a até 14 m de um monstro que cai ganha o ouro e a xp dele. Os níveis (até 12) e a loja (tecla **B** perto do Ferreiro) são os mesmos do MOBA.
+- **Cair:** você volta na vila depois de 5 s + 1,5 s por nível, com a vida cheia (sem perder nada).
+
+**Missões** (`quests.gd`): corrente em ordem, uma de cada vez. Chegue perto da Anciã (o "!" mostra missão nova e o "?" que dá para entregar) e use o botão da conversa para aceitar ou entregar.
+| Missão | Objetivo | Recompensa |
+|---|---|---|
+| Carniçais nos campos | 5 Carniçais | 120 de ouro, 150 de xp |
+| Ossos inquietos | 6 esqueletos | 160 de ouro, 220 de xp |
+| O Golem do bosque | o Golem | 220 de ouro, 320 de xp |
+| O Guardião do covil | o Guardião | 450 de ouro, 600 de xp |
+
+O HUD mostra a região onde você está, nível, ouro e a missão atual.
+
+**Próximos passos possíveis:** salvar o personagem (nível, ouro, itens, missões) entre partidas; mais regiões e monstros; masmorra; itens que caem dos monstros; mais personagens na vila; eventos e chefes de mundo.
+
 ## Modo Treino (`scripts/practice/`)
 Arena de testes, como a ferramenta de treino de um MOBA: escolha **Modo: Treino** no lobby (sozinho ou hospedando para amigos testarem junto). Não há ondas nem fim de partida, e não há fogo amigo.
 
@@ -280,6 +308,8 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 - [ ] MOBA: balanceamento (os níveis sobem rápido), bots que também façam a selva
 
 ## Checklist de teste manual
+- [ ] Mundo: na vila, a Anciã tem "!"; aceitar a missão; os Carniçais atacam quando você chega perto
+- [ ] Mundo: derrotar 5 Carniçais, voltar e entregar; comprar no Ferreiro (B); cair e voltar na vila
 - [ ] Segurar E mostra a área no cursor; soltar lança. Segurar R com 3 iguais: área dourada
 - [ ] Mouse num inimigo: anel vermelho embaixo; num aliado: verde
 - [ ] Números de dano sobem dos alvos; "Congelado!" aparece ao congelar
