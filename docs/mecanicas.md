@@ -187,6 +187,27 @@ Todos perseguem o mago vivo mais próximo pelo navmesh da arena e ignoram quem e
 - **Cair e reviver:** com a vida em 0, o personagem cai, não age e não recebe dano. Um aliado o levanta com o **W** (mouse sobre ele), com qualquer elemento **Vida** nele ou com o ultimate **Bênção**.
 - **Vitória:** limpar a onda 5. **Derrota:** todos caídos ao mesmo tempo. O host aperta **R** para jogar de novo (só na tela de fim).
 
+## Modo Treino (`scripts/practice/`)
+Arena de testes, como a ferramenta de treino de um MOBA: escolha **Modo: Treino** no lobby (sozinho ou hospedando para amigos testarem junto). Não há ondas nem fim de partida, e não há fogo amigo.
+
+**Bonecos de teste** (não andam atrás de ninguém; time inimigo):
+| Boneco | Vida | Particularidade |
+|---|---|---|
+| Comum | 1000 | alvo simples |
+| Blindado | 1500 | 40% de armadura e resiste a empurrões |
+| Que revida | 1000 | bate (20) a cada 1,5 s em quem estiver a até 2,5 m; não bate cego, atordoado nem em quem está invisível |
+
+- Mostram em cima o **dano total recebido** e o **DPS dos últimos 5 s**, e os estados.
+- Têm 100 de mana (para testar o Vazio).
+- Depois de **4 s sem levar dano**, voltam à vida e mana cheias. Se caem, renascem em 2 s no mesmo lugar.
+
+**Painel de treino** (lado esquerdo; tecla **Tab** mostra/esconde, configurável):
+- **Mana infinita**, **Sem recarga**, **Imortal** e **Bonecos andam** (vão e voltam 4 m para os lados, para treinar a mira). Valem para todos na partida.
+- **Zerar recargas**, **Encher vida/mana**, **Limpar estados** (do seu personagem) e **Zerar medidor**.
+- **+ comum / + blindado / + que revida** põem bonecos (até 10); **Tirar** remove todos.
+- **Classe e elementos:** escolha a classe e 3 elementos (os opostos ficam bloqueados) e aperte **Trocar agora**: o personagem troca na hora, no mesmo lugar.
+- Quem cai (sem Imortal) volta sozinho em 3 s.
+
 ## Modo MOBA (`scripts/moba/`)
 Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou Vermelho; com **Completar os times com bots**, o host completa os dois times até 3 campeões controlados pelo computador. Em "Jogar sozinho" no modo MOBA, você joga com 2 bots aliados contra 3 bots.
 
@@ -239,6 +260,8 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 - [ ] MOBA: balanceamento (os níveis sobem rápido), bots que também façam a selva
 
 ## Checklist de teste manual
+- [ ] Treino: os 3 bonecos aparecem; o dano e o DPS sobem ao acertar; Tab esconde o painel
+- [ ] Treino: Mana infinita + Sem recarga deixam usar as skills sem parar; trocar de classe pelo painel
 - [ ] No lobby: escolher a classe e 3 elementos; os opostos ficam bloqueados
 - [ ] Botão direito no chão: o personagem anda até lá contornando os pilares; segurando, segue o cursor
 - [ ] D D F: a carga mostra 3 elementos; um 4º não entra

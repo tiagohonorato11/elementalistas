@@ -12,6 +12,8 @@ const Projectile = preload("res://scripts/gameplay/projectile.gd")
 const Barrier = preload("res://scripts/gameplay/barrier.gd")
 const Meteor = preload("res://scripts/gameplay/meteor.gd")
 const Zone = preload("res://scripts/gameplay/zone.gd")
+const Dummy = preload("res://scripts/practice/dummy.gd")
+const PracticeState = preload("res://scripts/practice/practice_state.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
@@ -42,7 +44,7 @@ var camera: Camera3D
 var hud: Hud
 var spawner: MultiplayerSpawner
 var local_player: Player
-var game_state: Node          # GameState (Arena) ou MobaState
+var game_state: Node          # GameState (Arena), MobaState ou PracticeState (Treino)
 var mode := "arena"
 var zoom := 1.0               # rodinha do mouse: aproxima/afasta a câmera
 # Para o minimapa: metade do mapa (x, z), paredes e rotas como retângulos no chão.
@@ -55,8 +57,8 @@ var _terrain_materials := {}
 
 func _ready() -> void:
 	mode = Network.game_mode()
-	# Arena é cooperativa (fogo amigo ligado); no MOBA aliados não se ferem.
-	Combat.friendly_fire = mode != "moba"
+	# Arena é cooperativa (fogo amigo ligado); no MOBA e no Treino aliados não se ferem.
+	Combat.friendly_fire = mode == "arena"
 	_build_world()
 
 	camera = Camera3D.new()
@@ -109,11 +111,16 @@ func _on_all_loaded() -> void:
 	if mode == "moba":
 		_start_moba()
 		return
-	spawn_entity({"type": "state", "pos": Vector3.ZERO})
+	if mode == "practice":
+		spawn_entity({"type": "practice_state", "pos": Vector3.ZERO})
+	else:
+		spawn_entity({"type": "state", "pos": Vector3.ZERO})
 	for i in Network.players.size():
 		var peer: int = Network.players[i]
 		spawn_entity({"type": "player", "id": peer, "class": Network.class_of(peer), "team": Combat.BLUE,
 			"elements": Network.elements_of(peer), "color": i, "pos": SPAWN_POINTS[i % SPAWN_POINTS.size()]})
+	if mode == "practice":
+		game_state.start()
 
 
 # MOBA: estado da partida, estruturas e selva, jogadores nos times e bots completando.
@@ -148,7 +155,7 @@ func spawn_entity(data: Dictionary) -> Node:
 	_entity_counter += 1
 	if data.type == "player":
 		data["name"] = ("Bot%d" if data.get("bot", false) else "Player%d") % data.id
-	elif data.type == "state" or data.type == "moba_state":
+	elif data.type == "state" or data.type == "moba_state" or data.type == "practice_state":
 		data["name"] = "GameState"
 	elif data.type == "structure":
 		data["name"] = data.id
@@ -222,6 +229,14 @@ func _spawn_entity(data: Dictionary) -> Node:
 		game_state = MobaState.new()
 		hud.game_state = game_state
 		node = game_state
+	elif data.type == "practice_state":
+		game_state = PracticeState.new()
+		hud.game_state = game_state
+		node = game_state
+	elif data.type == "dummy":
+		var dummy := Dummy.new()
+		dummy.kind = data.kind
+		node = dummy
 	elif data.type == "structure":
 		var structure := Structure.new()
 		structure.kind = data.kind

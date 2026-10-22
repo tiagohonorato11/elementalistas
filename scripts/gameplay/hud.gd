@@ -10,6 +10,8 @@ const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaState = preload("res://scripts/moba/moba_state.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
+const PracticeState = preload("res://scripts/practice/practice_state.gd")
+const PracticePanel = preload("res://scripts/practice/practice_panel.gd")
 
 const CHARGE_ACTIONS := ["charge_1", "charge_2", "charge_3"]
 const SKILL_ACTIONS := {"q": "skill_q", "w": "skill_w", "e": "skill_e", "r": "skill_r"}
@@ -34,6 +36,7 @@ var mana_bar: ProgressBar
 var mana_label: Label
 var minimap: Control
 var blackout_rect: ColorRect   # Mega fumaça: a visão some
+var practice_panel: Control    # modo Treino
 
 const SHORT_NAMES := {
 	E.Type.WATER: "Água", E.Type.LIFE: "Vida", E.Type.SHIELD: "Esc.", E.Type.COLD: "Frio",
@@ -96,6 +99,8 @@ func _process(_delta: float) -> void:
 	_update_skills()
 	if game_state is MobaState:
 		_update_moba()
+	elif game_state is PracticeState:
+		_update_practice()
 	else:
 		_update_wave()
 	_update_specials()
@@ -104,6 +109,27 @@ func _process(_delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("shop") and game_state is MobaState:
 		_toggle_shop()
+	elif event.is_action_pressed("practice_panel") and practice_panel != null:
+		practice_panel.visible = not practice_panel.visible
+
+
+# --- Treino ------------------------------------------------------------------
+
+func _update_practice() -> void:
+	banner.text = ""
+	if practice_panel == null:
+		practice_panel = PracticePanel.new()
+		practice_panel.state = game_state
+		add_child(practice_panel)
+	practice_panel.player = player
+	var on := PackedStringArray()
+	for id in PracticeState.OPTIONS:
+		if game_state.get(id):
+			on.append(PracticeState.OPTIONS[id])
+	wave_label.text = "Treino%s\nPainel: %s" % [
+		(" | " + ", ".join(on)) if not on.is_empty() else "", Keybinds.action_text("practice_panel")]
+	if is_instance_valid(player) and player.health.dead:
+		banner.text = "Você caiu! Volta em instantes."
 
 
 # --- MOBA --------------------------------------------------------------------

@@ -3,6 +3,7 @@
 # Arena: usa Orbe, Mini meteoro, Maldição, bolha de escudo e Meteoro (Mago) em alvos com estados.
 # MOBA: tira fotos das rotas com tropas, de uma base e do centro da selva.
 # Lobby (--mode=lobby): a tela inicial.
+# Treino (--mode=practice): bonecos com o medidor de dano e o painel de testes.
 extends Node
 
 
@@ -34,6 +35,8 @@ class Driver extends Node:
 				main.zoom = arg.get_slice("=", 1).to_float()
 		if mode == "moba":
 			await _moba_shots()
+		elif mode == "practice":
+			await _practice_shots()
 		else:
 			await _arena_shots()
 		get_tree().quit()
@@ -84,6 +87,13 @@ class Driver extends Node:
 		player.request_skill("r", center, "")
 		await _seconds(1.05)
 		await _shot("meteoro")
+
+	func _practice_shots() -> void:
+		var dummy: Node = get_tree().get_nodes_in_group("dummies")[0]
+		player.aim_point = dummy.global_position
+		await _seconds(0.3)
+		await _cast([0, 0], "q", dummy.global_position, 0.6, "treino")
+		await _cast([1], "e", dummy.global_position, 1.2, "treino_meteoro")
 
 	# Tela inicial com a escolha de classe e de elementos.
 	func _lobby_shot() -> void:
