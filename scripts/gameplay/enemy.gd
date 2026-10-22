@@ -1,7 +1,8 @@
 # Inimigo controlado pelo host. Os outros peers só exibem.
 # - Arena: escolhe o jogador vivo mais próximo, anda até ele pelo navmesh e ataca.
-# - Selva do MOBA (time neutro): fica no acampamento; só ataca quando leva dano,
-#   persegue quem estiver perto e, se for longe demais, volta e se cura.
+# - Selva do MOBA e monstros do Mundo (time neutro): ficam no acampamento; atacam
+#   quando levam dano (ou, com "aggro_range", quando alguém chega perto), perseguem
+#   quem estiver perto e, se forem longe demais, voltam e se curam.
 extends CharacterBody3D
 
 const E = preload("res://scripts/core/elements.gd")
@@ -23,6 +24,12 @@ const LOOKS := {
 	"jungle_wolf": ["skeleton_rogue", "Dualwield_Melee_Attack_Stab"],
 	"jungle_golem": ["skeleton_warrior", "2H_Melee_Attack_Chop"],
 	"boss": ["skeleton_mage", "Spellcast_Long"],
+	# Mundo (RPG)
+	"ghoul": ["skeleton_rogue", "Dualwield_Melee_Attack_Stab"],
+	"skeleton": ["skeleton_minion", "1H_Melee_Attack_Chop"],
+	"skeleton_archer": ["skeleton_mage", "Spellcast_Shoot"],
+	"forest_golem": ["skeleton_warrior", "2H_Melee_Attack_Chop"],
+	"world_boss": ["skeleton_mage", "Spellcast_Long"],
 }
 
 const GRAVITY := 20.0
@@ -69,6 +76,32 @@ const KINDS := {
 		"label": "Guardião", "hp": 3200.0, "speed": 2.0, "scale": 2.3, "color": Color(0.3, 0.6, 0.5),
 		"range": 3.0, "cooldown": 1.8, "damage": 70.0, "elements": [E.Type.EARTH], "resist": {},
 		"push_scale": 0.1, "gold": 250, "xp": 300,
+	},
+	# Mundo (RPG). aggro_range: atacam quem chegar a essa distância.
+	"ghoul": {
+		"label": "Carniçal", "hp": 140.0, "speed": 3.6, "scale": 0.85, "color": Color(0.55, 0.55, 0.5),
+		"range": 1.6, "cooldown": 1.1, "damage": 10.0, "elements": [], "resist": {},
+		"gold": 12, "xp": 25, "aggro_range": 7.0,
+	},
+	"skeleton": {
+		"label": "Esqueleto", "hp": 200.0, "speed": 3.0, "scale": 1.0, "color": Color(0.75, 0.75, 0.7),
+		"range": 1.7, "cooldown": 1.2, "damage": 14.0, "elements": [], "resist": {},
+		"gold": 18, "xp": 35, "aggro_range": 6.0,
+	},
+	"skeleton_archer": {
+		"label": "Esqueleto arqueiro", "hp": 130.0, "speed": 2.6, "scale": 0.95, "color": Color(0.45, 0.65, 0.85),
+		"range": 11.0, "keep_distance": 7.0, "cooldown": 2.5, "damage": 0.0,
+		"projectile": [E.Type.ICE], "elements": [], "resist": {}, "gold": 18, "xp": 35, "aggro_range": 9.0,
+	},
+	"forest_golem": {
+		"label": "Golem do bosque", "hp": 900.0, "speed": 2.2, "scale": 1.5, "color": Color(0.4, 0.5, 0.3),
+		"range": 2.3, "cooldown": 1.7, "damage": 35.0, "elements": [E.Type.EARTH], "resist": {E.Type.EARTH: 0.5},
+		"push_scale": 0.4, "gold": 120, "xp": 200,
+	},
+	"world_boss": {
+		"label": "Guardião do covil", "hp": 2200.0, "speed": 2.0, "scale": 2.2, "color": Color(0.5, 0.3, 0.6),
+		"range": 3.0, "cooldown": 1.8, "damage": 50.0, "elements": [E.Type.VOID], "resist": {},
+		"push_scale": 0.1, "gold": 400, "xp": 600, "aggro_range": 8.0,
 	},
 }
 
@@ -184,6 +217,8 @@ func _physics_process(delta: float) -> void:
 	_retarget_timer -= delta
 	if _retarget_timer <= 0.0 or not _is_valid_target(target):
 		_retarget_timer = RETARGET_TIME
+		if is_neutral() and not aggressive and not returning:
+			_check_aggro()
 		target = _jungle_target() if is_neutral() else _nearest_player()
 
 	var direction := Vector3.ZERO
@@ -281,6 +316,20 @@ func _is_valid_target(node) -> bool:
 		# Selva: não sai de perto do acampamento.
 		return aggressive and not returning and node.global_position.distance_to(camp_position) <= LEASH_RANGE
 	return true
+
+
+# Mundo: monstros com "aggro_range" atacam o personagem que chegar perto
+# (menos o Assassino invisível).
+func _check_aggro() -> void:
+	var reach: float = info.get("aggro_range", 0.0)
+	if reach <= 0.0:
+		return
+	for player in get_tree().get_nodes_in_group("players"):
+		if player.health.dead or player.invisible > 0.0:
+			continue
+		if player.global_position.distance_to(global_position) <= reach:
+			aggressive = true
+			return
 
 
 # Selva: o campeão ou tropa mais próximo (provocou o acampamento); longe demais, volta.

@@ -4,6 +4,7 @@
 # MOBA: tira fotos das rotas com tropas, de uma base e do centro da selva.
 # Lobby (--mode=lobby): a tela inicial.
 # Treino (--mode=practice): bonecos com o medidor de dano e o painel de testes.
+# Mundo (--mode=world): vila, campos, cemitério, covil e bosque.
 extends Node
 
 
@@ -37,6 +38,8 @@ class Driver extends Node:
 			await _moba_shots()
 		elif mode == "practice":
 			await _practice_shots()
+		elif mode == "world":
+			await _world_shots()
 		else:
 			await _arena_shots()
 		get_tree().quit()
@@ -110,6 +113,19 @@ class Driver extends Node:
 		main.game_state.phase = 3   # vitória: mostra o placar
 		await _seconds(0.6)
 		await _shot("placar")
+
+	# Mundo: a vila (com a conversa da Anciã), os campos, o cemitério e o covil.
+	func _world_shots() -> void:
+		await _seconds(1.0)
+		await _shot("vila")
+		player.global_position = Vector3(-5, 0, 22.5)
+		await _seconds(0.6)
+		await _shot("anciã")
+		for spot in [["campos", Vector3(-24, 0, 8)], ["cemiterio", Vector3(24, 0, 12)], ["covil", Vector3(11, 0, -16)],
+				["bosque", Vector3(-16, 0, -18)]]:
+			player.global_position = spot[1]
+			await _seconds(0.8)
+			await _shot(spot[0])
 
 	func _practice_shots() -> void:
 		var dummy: Node = get_tree().get_nodes_in_group("dummies")[0]

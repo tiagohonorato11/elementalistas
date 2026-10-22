@@ -5,10 +5,13 @@ extends Control
 
 const Combat = preload("res://scripts/core/combat.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
+const WorldMap = preload("res://scripts/world/world_map.gd")
 
 const MARGIN := 16.0
 const MOBA_WIDTH := 300.0
 const ARENA_WIDTH := 170.0
+const WORLD_WIDTH := 250.0
+const NPC_COLOR := Color(1.0, 0.9, 0.3)
 
 const BACKGROUND := Color(0.1, 0.14, 0.1, 0.82)
 const BORDER := Color(0.85, 0.8, 0.6, 0.9)
@@ -27,7 +30,11 @@ var _scale := 1.0               # pixels por metro
 func _ready() -> void:
 	if main.get("map_half") != null:
 		_half = main.map_half
-	var width := MOBA_WIDTH if main.get("mode") == "moba" else ARENA_WIDTH
+	var width := ARENA_WIDTH
+	if main.get("mode") == "moba":
+		width = MOBA_WIDTH
+	elif main.get("mode") == "world":
+		width = WORLD_WIDTH
 	_scale = width / (_half.x * 2.0)
 	var map_size := Vector2(width, _half.y * 2.0 * _scale)
 	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -80,6 +87,10 @@ func _draw() -> void:
 	for wall in main.get("map_walls"):
 		draw_rect(_rect_to_map(wall), WALL)
 	var my_team := _viewer_team()
+	if main.get("mode") == "world":
+		draw_circle(to_map(WorldMap.FOUNTAIN), WorldMap.FOUNTAIN_RADIUS * _scale, Color(ALLY, 0.35))
+		for npc in [WorldMap.ELDER, WorldMap.MERCHANT]:
+			draw_rect(Rect2(to_map(npc) - Vector2(3, 3), Vector2(6, 6)), NPC_COLOR)
 	if main.get("mode") == "moba":
 		for team in [Combat.BLUE, Combat.RED]:
 			var color := ALLY if team == my_team else ENEMY
@@ -103,7 +114,7 @@ func _draw() -> void:
 	for enemy in tree.get_nodes_in_group("enemies"):
 		if enemy.health.dead:
 			continue
-		var radius := 5.0 if enemy.kind == "boss" else 3.0
+		var radius := 5.0 if enemy.kind in ["boss", "world_boss", "forest_golem"] else 3.0
 		draw_circle(to_map(enemy.global_position), radius, _color_of(enemy, my_team))
 		draw_arc(to_map(enemy.global_position), radius, 0.0, TAU, 12, Color.BLACK, 1.0)
 	var local: Node = main.get("local_player")

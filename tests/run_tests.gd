@@ -12,6 +12,8 @@ const Classes = preload("res://scripts/core/classes.gd")
 const Combat = preload("res://scripts/core/combat.gd")
 const Progression = preload("res://scripts/moba/progression.gd")
 const MobaMap = preload("res://scripts/moba/moba_map.gd")
+const Quests = preload("res://scripts/world/quests.gd")
+const WorldMap = preload("res://scripts/world/world_map.gd")
 
 var checks := 0
 var failures := 0
@@ -27,6 +29,7 @@ func _init() -> void:
 	_test_keybinds()
 	_test_classes()
 	_test_moba()
+	_test_quests()
 	print("%d verificações, %d falhas" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -311,6 +314,32 @@ class Unit extends RefCounted:
 	var team: int
 	func _init(p_team: int) -> void:
 		team = p_team
+
+
+func _test_quests() -> void:
+	var progress := {}
+	check(Quests.next_offer(progress) == "carnicais" and Quests.active(progress) == "", "a primeira missão é oferecida")
+	progress = Quests.accept(progress, "ossos")
+	check(progress.is_empty(), "não dá para pular missões")
+	progress = Quests.accept(progress, "carnicais")
+	check(Quests.active(progress) == "carnicais" and Quests.next_offer(progress) == "", "aceitar: uma missão por vez")
+	progress = Quests.on_kill(progress, "skeleton")
+	check(progress.carnicais.count == 0, "monstro de outro tipo não conta")
+	for i in 7:
+		progress = Quests.on_kill(progress, "ghoul")
+	check(progress.carnicais.count == 5 and Quests.is_complete(progress, "carnicais"), "contagem para no total (5)")
+	check("volte" in Quests.tracker(progress), "HUD manda voltar à Anciã")
+	progress = Quests.turn_in(progress, "carnicais")
+	check(progress.carnicais.done and Quests.next_offer(progress) == "ossos", "entregar libera a próxima")
+	var ids := []
+	for quest in Quests.QUESTS:
+		ids.append(quest.id)
+	check(ids == ["carnicais", "ossos", "golem", "guardiao"], "corrente: carniçais, ossos, golem, guardião")
+	check(WorldMap.zone_at(WorldMap.FOUNTAIN) == "Vila" and WorldMap.zone_at(Vector3(-30, 0, 6)) == "Campos"
+		and WorldMap.zone_at(Vector3(28, 0, 2)) == "Cemitério" and WorldMap.zone_at(Vector3(11, 0, -27)) == "Covil"
+		and WorldMap.zone_at(Vector3(-27, 0, -26)) == "Bosque", "regiões do mapa")
+	for camp in WorldMap.CAMPS:
+		check(camp.pos.distance_to(WorldMap.FOUNTAIN) > 25.0, "acampamento %s longe da vila" % camp.id)
 
 
 func _test_moba() -> void:

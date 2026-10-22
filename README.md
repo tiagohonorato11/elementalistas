@@ -12,6 +12,8 @@ Pelo editor:
 
 Antes da partida, no lobby, cada um escolhe a **classe** e **3 elementos**. Controles padrão: **botão direito** no chão para andar, mira no mouse, **D F G** carregam os elementos (até 3) e **Q W E R** usam as skills da classe, que consomem a carga (o **R**, ultimate, é volátil: muda conforme a combinação da carga, e 3 iguais geram a versão MEGA). As skills gastam mana e têm recarga. As teclas aparecem na tela e podem ser trocadas em **Configurações**, no lobby. Detalhes em `docs/mecanicas.md`.
 
+Modos: **Arena** (ondas, cooperativo), **MOBA** (3v3 com bots), **Treino** (arena de testes) e **Mundo (RPG)**: um mapa aberto com vila, regiões de monstros, níveis, loja e missões, que vai crescer aos poucos.
+
 Para testar skills, classes e elementos com calma, escolha o modo **Treino** no lobby: bonecos de teste com medidor de dano e um painel (tecla **Tab**) com mana infinita, sem recarga, imortal e troca de classe/elementos na hora.
 
 ## Jogar com amigos no mesmo Wi-Fi
@@ -54,6 +56,13 @@ godot --headless --path . res://tests/moba_net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/moba_net_smoke.tscn -- --role=client
 ```
 
+Testes do modo Mundo (mapa, monstros, missões, loja, reaparecer; e o mesmo pela rede):
+```
+godot --headless --path . res://tests/world_smoke.tscn
+godot --headless --path . res://tests/world_net_smoke.tscn -- --role=host
+godot --headless --path . res://tests/world_net_smoke.tscn -- --role=client
+```
+
 Testes do modo Treino (bonecos, painel, troca de classe; e o mesmo pela rede):
 ```
 godot --headless --path . res://tests/practice_smoke.tscn
@@ -93,6 +102,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - `scripts/gameplay/`: mago, inimigos, ondas (game_state), projétil, barreira, HUD e arena (montada por código, em gray-box).
 - `scripts/moba/`: modo MOBA: mapa, estruturas, tropas, estado da partida, ouro/níveis/loja e bots.
 - `scripts/practice/`: modo Treino: bonecos de teste, estado com as opções de teste e o painel.
+- `scripts/world/`: modo Mundo (RPG): mapa com a vila e as regiões, estado (acampamentos, recompensas, fonte), missões e personagens da vila.
 - `scripts/vfx/`: visual: partículas dos elementos, efeitos de feitiços e estados, modelos animados das unidades e barras de vida.
 - `scripts/audio/`: som: autoload `Audio` (efeitos 3D, loops, música com troca calma/combate/chefe, volumes), sons das unidades e dos eventos da partida.
 - `assets/`: modelos KayKit (CC0), áudio (CC0) e o shader do terreno.

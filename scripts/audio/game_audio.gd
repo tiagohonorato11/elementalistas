@@ -50,7 +50,7 @@ func _watch_state() -> void:
 	var state: Node = main.game_state
 	if not is_instance_valid(state):
 		return
-	if main.mode == "practice":
+	if main.mode == "practice" or main.mode == "world":
 		return
 	if main.mode == "moba":
 		if state.winner != _winner:
@@ -78,7 +78,7 @@ func _watch_state() -> void:
 
 
 func _watch_player(player: Node) -> void:
-	if main.mode == "moba":
+	if player.progression:
 		if _level != -1 and player.level > _level:
 			Audio.play("level_up")
 		_level = player.level

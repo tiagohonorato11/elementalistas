@@ -81,7 +81,7 @@ static func cannot_buy(item_id: String, gold: int, items: Array, at_shop: bool) 
 	if not ITEMS.has(item_id):
 		return "item desconhecido"
 	if not at_shop:
-		return "volte à fonte da base para comprar"
+		return "vá até a loja para comprar (fonte da base ou ferreiro da vila)"
 	if items.size() >= MAX_ITEMS:
 		return "inventário cheio"
 	if gold < ITEMS[item_id].cost:

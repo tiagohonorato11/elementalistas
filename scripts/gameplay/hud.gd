@@ -13,6 +13,9 @@ const MobaState = preload("res://scripts/moba/moba_state.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
 const PracticeState = preload("res://scripts/practice/practice_state.gd")
 const PracticePanel = preload("res://scripts/practice/practice_panel.gd")
+const WorldState = preload("res://scripts/world/world_state.gd")
+const WorldMap = preload("res://scripts/world/world_map.gd")
+const Quests = preload("res://scripts/world/quests.gd")
 const SkillIcon = preload("res://scripts/ui/skill_icon.gd")
 const Glyphs = preload("res://scripts/ui/glyphs.gd")
 const ElementInfo = preload("res://scripts/core/element_info.gd")
@@ -48,6 +51,9 @@ var mana_label: Label
 var minimap: Control
 var blackout_rect: ColorRect   # Mega fumaça: a visão some
 var practice_panel: Control    # modo Treino
+var dialog_panel: PanelContainer   # Mundo: conversa com a Anciã
+var _dialog_text: Label
+var _dialog_button: Button
 
 
 func _ready() -> void:
@@ -112,13 +118,15 @@ func _process(delta: float) -> void:
 		_update_moba()
 	elif game_state is PracticeState:
 		_update_practice()
+	elif game_state is WorldState:
+		_update_world()
 	else:
 		_update_wave()
 	_update_specials()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("shop") and game_state is MobaState:
+	if event.is_action_pressed("shop") and (game_state is MobaState or game_state is WorldState):
 		_toggle_shop()
 	elif event.is_action_pressed("practice_panel") and practice_panel != null:
 		practice_panel.visible = not practice_panel.visible
@@ -129,6 +137,92 @@ func _unhandled_input(event: InputEvent) -> void:
 # Clarão de tela (impactos grandes, como as versões MEGA).
 func flash(color: Color, strength: float) -> void:
 	flash_rect.color = Color(color, maxf(flash_rect.color.a, clampf(strength, 0.0, 0.6)))
+
+
+# --- Mundo -------------------------------------------------------------------
+
+func _update_world() -> void:
+	banner.text = ""
+	if not is_instance_valid(player):
+		wave_label.text = ""
+		return
+	var lines := PackedStringArray([
+		"Mundo — %s" % WorldMap.zone_at(player.global_position),
+		"Nível %d (%d/%d xp) | Ouro: %d" % [player.level, player.xp, Progression.xp_to_next(player.level), player.gold],
+		"Missão: %s" % Quests.tracker(player.quests),
+	])
+	if player.is_at_shop() and not player.health.dead:
+		lines.append("%s: loja do Ferreiro" % Keybinds.action_text("shop"))
+	wave_label.text = "\n".join(lines)
+	if player.health.dead:
+		banner.text = "Você caiu! Volta à vila em %d s." % ceili(player.respawn_time)
+	_update_dialog()
+	_update_shop()
+
+
+# Perto da Anciã: a conversa com a missão (aceitar, quanto falta, entregar).
+func _update_dialog() -> void:
+	var near: bool = player.near_elder()
+	if dialog_panel == null:
+		if not near:
+			return
+		dialog_panel = PanelContainer.new()
+		dialog_panel.position = Vector2(16, 140)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.08, 0.06, 0.04, 0.9)
+		style.border_color = Color(0.85, 0.7, 0.35)
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(8)
+		style.set_content_margin_all(12)
+		dialog_panel.add_theme_stylebox_override("panel", style)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 8)
+		dialog_panel.add_child(column)
+		var title := Label.new()
+		title.text = "Anciã Lira"
+		title.add_theme_font_size_override("font_size", 19)
+		title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+		column.add_child(title)
+		_dialog_text = Label.new()
+		_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_dialog_text.custom_minimum_size.x = 400
+		_dialog_text.add_theme_font_size_override("font_size", 15)
+		column.add_child(_dialog_text)
+		_dialog_button = Button.new()
+		_dialog_button.focus_mode = Control.FOCUS_NONE
+		_dialog_button.pressed.connect(_on_dialog_pressed)
+		column.add_child(_dialog_button)
+		add_child(dialog_panel)
+	dialog_panel.visible = near
+	if not near:
+		return
+	var active := Quests.active(player.quests)
+	var offer := Quests.next_offer(player.quests)
+	var text := ""
+	var button := ""
+	if not active.is_empty() and Quests.is_complete(player.quests, active):
+		var quest := Quests.info(active)
+		text = quest.done
+		button = "Entregar (+%d de ouro, +%d de xp)" % [quest.gold, quest.xp]
+	elif not active.is_empty():
+		text = "%s\nAinda falta: %s" % [Quests.info(active).offer, Quests.tracker(player.quests)]
+	elif not offer.is_empty():
+		var quest := Quests.info(offer)
+		text = "%s\n\nRecompensa: %d de ouro e %d de xp." % [quest.offer, quest.gold, quest.xp]
+		button = "Aceitar: %s" % quest.title
+	else:
+		text = "Você já ajudou a vila em tudo que eu precisava. Volte mais tarde, viajante."
+	_dialog_text.text = text
+	_dialog_button.text = button
+	_dialog_button.visible = not button.is_empty()
+
+
+func _on_dialog_pressed() -> void:
+	var active := Quests.active(player.quests)
+	if not active.is_empty() and Quests.is_complete(player.quests, active):
+		player.request_quest.rpc_id(1, "turn_in")
+	else:
+		player.request_quest.rpc_id(1, "accept")
 
 
 # --- Treino ------------------------------------------------------------------
@@ -227,7 +321,8 @@ func _update_shop() -> void:
 	var owned := PackedStringArray()
 	for id in player.items:
 		owned.append(Progression.ITEMS[id].label)
-	var hint := "" if at_shop else "Volte à fonte da base para comprar.\n"
+	var shop_place := "o Ferreiro da vila" if game_state is WorldState else "a fonte da base"
+	var hint := "" if at_shop else "Vá até %s para comprar.\n" % shop_place
 	shop_status.text = "%sOuro: %d | Itens: %s" % [hint, player.gold, ", ".join(owned) if not owned.is_empty() else "nenhum"]
 
 
