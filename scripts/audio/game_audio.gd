@@ -5,6 +5,7 @@ extends Node
 
 const Combat = preload("res://scripts/core/combat.gd")
 const GameState = preload("res://scripts/gameplay/game_state.gd")
+const Ambience = preload("res://scripts/audio/ambience.gd")
 
 const COMBAT_RANGE := 16.0
 const BOSS_RANGE := 15.0
@@ -18,15 +19,15 @@ var _gold := -1
 var _action := -1
 var _dead_structures := {}
 var _scan := 0.0
-var _ambience: Node
+var _ambience: Node3D
 
 
 func _ready() -> void:
 	main = get_parent()
 	Audio.music(main.mode)
-	_ambience = Audio.make_loop("ambience_meadow", self, 0.0, "Ambience")
-	if _ambience != null and DisplayServer.get_name() != "headless":
-		_ambience.play()
+	_ambience = Ambience.new()
+	_ambience.main = main
+	main.add_child.call_deferred(_ambience)
 
 
 func _exit_tree() -> void:
