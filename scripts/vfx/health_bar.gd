@@ -5,6 +5,7 @@ extends Node3D
 
 const Combat = preload("res://scripts/core/combat.gd")
 const Vfx = preload("res://scripts/vfx/vfx.gd")
+const FloatingText = preload("res://scripts/vfx/floating_text.gd")
 
 const ALLY := Color(0.3, 0.95, 0.35)
 const ENEMY := Color(1.0, 0.25, 0.2)
@@ -36,6 +37,13 @@ func _ready() -> void:
 	_fill.mesh = _fill_mesh
 	_fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_fill)
+	# Números de dano/cura e avisos de estado saem de cima da barra. Ficam no
+	# corpo da unidade (e não na barra), porque a barra some com a vida cheia.
+	var floating := FloatingText.new()
+	floating.health = health
+	floating.unit = unit
+	floating.position.y = height_above + 0.2
+	unit.add_child.call_deferred(floating)
 
 
 func _material(color: Color, priority: int) -> StandardMaterial3D:

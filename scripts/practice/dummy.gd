@@ -114,6 +114,7 @@ func _ready() -> void:
 		"Health:hp", "Health:dead", "Health:wet", "Health:burning", "Health:chilled", "Health:frozen",
 		"Health:shielded", "Health:stunned", "Health:slowed", "Health:vulnerable", "Health:blinded",
 		"Health:bleeding", "Health:silenced", "Health:hasted", "Health:fortified", "Health:barrier_hp",
+		"Health:last_element",
 	])
 
 

@@ -22,15 +22,15 @@ const CLASSES := {
 		"backstab": 1.0,
 		"skills": {
 			# Com carga: cresce e explode em área (splash = fração do dano nos outros).
-			"q": {"id": "orb", "label": "Orbe", "cost": 15.0, "cooldown": 1.5,
+			"q": {"id": "orb", "label": "Orbe", "description": "Projétil que leva a carga. Com carga fica maior e explode em área.", "cost": 15.0, "cooldown": 1.5,
 				"damage": 30.0, "speed": 20.0, "splash": 0.6},
-			"w": {"id": "bless_curse", "label": "Bênção/Maldição", "cost": 30.0, "cooldown": 8.0,
+			"w": {"id": "bless_curse", "label": "Bênção/Maldição", "description": "Aliado ou você: cura e protege contra os elementos da carga. Inimigo: a carga, lento e leva mais dano. Segure 1,5 s: bolha de escudo.", "cost": 30.0, "cooldown": 8.0,
 				"heal": 30.0, "slow": 0.4, "vulnerable": 0.2, "duration": 4.0,
 				"hold": 1.5, "barrier": 60.0, "bubble_time": 4.0, "bubble_radius": 3.0},
 			# Cai no cursor e deixa uma zona com o efeito de cada elemento da carga.
-			"e": {"id": "mini_meteor", "label": "Mini meteoro", "cost": 35.0, "cooldown": 7.0,
+			"e": {"id": "mini_meteor", "label": "Mini meteoro", "description": "Cai no cursor e deixa uma zona de 3 s com o efeito de cada elemento da carga.", "cost": 35.0, "cooldown": 7.0,
 				"damage": 40.0, "radius": 3.5, "zone_time": 3.0, "range": 14.0},
-			"r": {"id": "ultimate", "label": "Ultimate", "cost": 80.0, "cooldown": 60.0, "power": 1.0},
+			"r": {"id": "ultimate", "label": "Ultimate", "description": "Depende da carga: o elemento que mais aparece decide; 3 iguais = versão MEGA.", "cost": 80.0, "cooldown": 60.0, "power": 1.0},
 		},
 	},
 	"assassin": {
@@ -42,13 +42,13 @@ const CLASSES := {
 		"weapon": {"damage": 14.0, "cooldown": 0.3, "range": 1.9, "angle": 0.8, "push": 1.5},
 		"backstab": 2.0,
 		"skills": {
-			"q": {"id": "dagger", "label": "Adaga", "cost": 12.0, "cooldown": 2.0,
+			"q": {"id": "dagger", "label": "Adaga", "description": "Adaga rápida com a carga. Pelas costas causa o dobro.", "cost": 12.0, "cooldown": 2.0,
 				"damage": 24.0, "speed": 30.0},
-			"w": {"id": "veil_mark", "label": "Véu/Marca", "cost": 25.0, "cooldown": 10.0,
+			"w": {"id": "veil_mark", "label": "Véu/Marca", "description": "Aliado ou você: invisível. Inimigo: marcado (leva mais dano). Vida e Escudo da carga são sempre para você.", "cost": 25.0, "cooldown": 10.0,
 				"invisible": 2.5, "vulnerable": 0.3, "duration": 4.0},
-			"e": {"id": "shadow_step", "label": "Passo sombrio", "cost": 25.0, "cooldown": 8.0,
+			"e": {"id": "shadow_step", "label": "Passo sombrio", "description": "Salta 6 m para o mouse e solta a carga onde cai.", "cost": 25.0, "cooldown": 8.0,
 				"distance": 6.0, "radius": 2.5, "damage": 25.0},
-			"r": {"id": "ultimate", "label": "Ultimate", "cost": 70.0, "cooldown": 60.0, "power": 0.8},
+			"r": {"id": "ultimate", "label": "Ultimate", "description": "Depende da carga: o elemento que mais aparece decide; 3 iguais = versão MEGA.", "cost": 70.0, "cooldown": 60.0, "power": 0.8},
 		},
 	},
 	"fighter": {
@@ -60,13 +60,13 @@ const CLASSES := {
 		"weapon": {"damage": 35.0, "cooldown": 0.9, "range": 2.7, "angle": 1.3, "push": 8.0},
 		"backstab": 1.0,
 		"skills": {
-			"q": {"id": "whirl", "label": "Golpe giratório", "cost": 15.0, "cooldown": 4.0,
+			"q": {"id": "whirl", "label": "Golpe giratório", "description": "Acerta todos ao redor com a carga e empurra.", "cost": 15.0, "cooldown": 4.0,
 				"damage": 35.0, "radius": 2.8, "push": 7.0},
-			"w": {"id": "shout", "label": "Grito/Desafio", "cost": 25.0, "cooldown": 10.0,
+			"w": {"id": "shout", "label": "Grito/Desafio", "description": "Aliado ou você: cura, acelera e fortifica. Inimigo: lento e a carga.", "cost": 25.0, "cooldown": 10.0,
 				"heal": 20.0, "haste": 0.3, "fortify": 0.3, "slow": 0.4, "duration": 4.0},
-			"e": {"id": "charge", "label": "Investida", "cost": 25.0, "cooldown": 7.0,
+			"e": {"id": "charge", "label": "Investida", "description": "Corre 7 m; quem estiver no caminho leva a carga e é empurrado.", "cost": 25.0, "cooldown": 7.0,
 				"damage": 30.0, "push": 10.0},
-			"r": {"id": "ultimate", "label": "Ultimate", "cost": 60.0, "cooldown": 60.0, "power": 0.8},
+			"r": {"id": "ultimate", "label": "Ultimate", "description": "Depende da carga: o elemento que mais aparece decide; 3 iguais = versão MEGA.", "cost": 60.0, "cooldown": 60.0, "power": 0.8},
 		},
 	},
 }

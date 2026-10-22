@@ -23,6 +23,9 @@ const StatusFx = preload("res://scripts/vfx/status_fx.gd")
 const UnitModel = preload("res://scripts/vfx/unit_model.gd")
 const HealthBar = preload("res://scripts/vfx/health_bar.gd")
 const UnitSounds = preload("res://scripts/audio/unit_sounds.gd")
+const AimIndicator = preload("res://scripts/vfx/aim_indicator.gd")
+const Projectile = preload("res://scripts/gameplay/projectile.gd")
+const Meteor = preload("res://scripts/gameplay/meteor.gd")
 
 # Animação de golpe de cada classe (modelos KayKit).
 const MELEE_ANIMS := {
@@ -60,6 +63,8 @@ const SELF_HEAL := 30.0          # Vida no W (Assassino: sempre nele mesmo)
 const SELF_BARRIER := 40.0       # Escudo no W: barreira (por Escudo)
 const SELF_BARRIER_TIME := 5.0
 const HOLD_SLOW := 0.5           # segurando o W (Mago): anda mais devagar
+const CHARGE_RING_START := 0.55  # anéis da carga: o 1º fica a esta distância além do corpo
+const CHARGE_RING_GAP := 0.3     # e cada um seguinte, um pouco mais para fora
 const BUBBLE_TICK := 0.25
 const BUBBLE_STRENGTH := 0.15    # força dos elementos da bolha nos inimigos dentro, por pulso
 const BUBBLE_EARTH_BONUS := 40.0
@@ -135,6 +140,35 @@ const FEAST_RADIUS := 10.0
 const FEAST_DAMAGE := 50.0
 const FEAST_BLEED := 6.0
 const FEAST_TEAM_STEAL := 0.3
+# Forma da área de cada ultimate, para o indicador de mira (aim_indicator.gd).
+const ULT_SHAPES := {
+	"meteor": {"type": "circle", "radius": Meteor.RADIUS, "range": METEOR_RANGE},
+	"storm": {"type": "self", "radius": STORM_RANGE},
+	"frost": {"type": "self", "radius": FROST_RADIUS},
+	"blessing": {"type": "self", "radius": 2.0},
+	"quake": {"type": "self", "radius": QUAKE_RADIUS},
+	"cataclysm": {"type": "circle", "radius": CATACLYSM_RADIUS, "range": CATACLYSM_RANGE},
+	"tide": {"type": "cone", "length": TIDE_RANGE, "angle": TIDE_ANGLE},
+	"fortress": {"type": "self", "radius": FORTRESS_RADIUS},
+	"eclipse": {"type": "self", "radius": ECLIPSE_RADIUS},
+	"singularity": {"type": "circle", "radius": SINGULARITY_RADIUS, "range": SINGULARITY_RANGE},
+	"smokescreen": {"type": "self", "radius": SMOKESCREEN_RADIUS},
+	"blood_moon": {"type": "self", "radius": BLOOD_MOON_RADIUS},
+	"mega_fire": {"type": "circle", "radius": RAIN_SPREAD + Meteor.RADIUS, "range": METEOR_RANGE},
+	"mega_lightning": {"type": "self", "radius": STORM_RANGE},
+	"mega_cold": {"type": "self", "radius": ICE_AGE_RADIUS},
+	"mega_life": {"type": "self", "radius": 2.0},
+	"mega_earth": {"type": "line", "length": FISSURE_LENGTH, "width": FISSURE_WIDTH * 2.0},
+	"mega_arcane": {"type": "self", "radius": SUPERNOVA_RADIUS},
+	"mega_water": {"type": "cone", "length": TSUNAMI_RANGE, "angle": TSUNAMI_ANGLE},
+	"mega_shield": {"type": "self", "radius": BASTION_RADIUS},
+	"mega_void": {"type": "self", "radius": BLACKOUT_RADIUS},
+	"mega_gravity": {"type": "circle", "radius": BLACK_HOLE_RADIUS, "range": SINGULARITY_RANGE},
+	"mega_smoke": {"type": "self", "radius": MEGA_SMOKE_RADIUS},
+	"mega_blood": {"type": "self", "radius": FEAST_RADIUS},
+}
+const AIM_LINE := 14.0           # comprimento da faixa de mira dos projéteis
+const MEGA_COLOR := Color(1.0, 0.82, 0.3)
 
 # Ações configuráveis (ver scripts/ui/keybinds.gd).
 const CHARGE_ACTIONS := ["charge_1", "charge_2", "charge_3"]
@@ -176,6 +210,9 @@ var mana := 0.0
 var max_mana := 0.0
 var skill_cooldowns := {}         # "q"/"w"/"e"/"r" -> segundos restantes
 var invisible := 0.0              # Véu/Passo sombrio: os inimigos ignoram
+var stat_damage := 0.0            # placar do fim da partida (host conta, todos veem)
+var stat_healing := 0.0
+var stat_kills := 0
 var bubble_time := 0.0            # bolha de escudo do Mago (W segurado)
 var bubble_elements: Array = []
 
@@ -197,8 +234,14 @@ var storm_chain := 0              # Tempestade suprema: raios que saltam
 var _bubble_tick := 0.0
 var _bubble_mesh: MeshInstance3D
 var _bubble_shown: Array = []
+var _charge_rings: Array = []     # um anel na cor de cada elemento da carga
+var _rings_shown: Array = []
+var _ring_clock := 0.0
 var _hold_slot := ""              # skill segurada (dono): decide ao soltar ou ao completar
 var _hold_time := 0.0
+var _aim_slot := ""               # skill com a tecla apertada (dono): mostra a mira e sai ao soltar
+var _aim_indicator: Node3D
+var denied := {}                  # slot -> quando a skill foi negada (dono; o HUD pisca o ícone)
 var dash_hit_time := 0.0      # Investida em andamento (host)
 var dash_direction := Vector3.ZERO
 var dash_elements: Array = []
@@ -260,12 +303,12 @@ func _ready() -> void:
 	SyncUtil.add_sync(self, "StateSync", 1, [
 		".:queue_view", ".:fx_shape", ".:fx_element", ".:fx_elements", ".:fx_length", ".:fx_width",
 		".:mana", ".:max_mana", ".:skill_cooldowns", ".:invisible", ".:action_anim", ".:action_count",
-		".:bubble_time", ".:bubble_elements",
+		".:bubble_time", ".:bubble_elements", ".:stat_damage", ".:stat_healing", ".:stat_kills",
 		"Health:hp", "Health:wet", "Health:burning", "Health:chilled", "Health:shielded", "Health:dead",
 		"Health:frozen", "Health:ward", "Health:ward_elements", "Health:max_hp",
 		"Health:stunned", "Health:slowed", "Health:slow_amount", "Health:hasted", "Health:haste_amount",
 		"Health:vulnerable", "Health:fortified", "Health:blinded", "Health:blackout", "Health:bleeding",
-		"Health:lifesteal", "Health:barrier_hp", "Health:silenced",
+		"Health:lifesteal", "Health:barrier_hp", "Health:silenced", "Health:last_element",
 		".:gold", ".:xp", ".:level", ".:items", ".:buffs", ".:respawn_time", ".:speed_bonus", ".:cooldown_mult",
 	])
 	set_multiplayer_authority(peer_id, false)
@@ -289,12 +332,16 @@ func _ready() -> void:
 
 # Modelo animado da classe (KayKit), com um anel no chão na cor do jogador
 # (Arena) ou do time (MOBA) e o nome da classe acima da cabeça.
-func _build_body() -> void:
-	var radius := 0.5
+func _body_radius() -> float:
 	if class_id == "assassin":
-		radius = 0.4
-	elif class_id == "fighter":
-		radius = 0.6
+		return 0.4
+	if class_id == "fighter":
+		return 0.6
+	return 0.5
+
+
+func _build_body() -> void:
+	var radius := _body_radius()
 
 	var collision := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
@@ -351,6 +398,7 @@ func apply_loadout(new_class: String, new_elements: Array) -> void:
 		_bubble_mesh = null
 		_bubble_shown = []
 	_hold_slot = ""
+	_rings_shown = [-1]   # refaz os anéis da carga no tamanho da classe nova
 	_build_body()
 	if multiplayer.is_server():
 		health.max_hp = cls.hp
@@ -381,16 +429,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	for action in SKILL_ACTIONS:
 		var slot: String = SKILL_ACTIONS[action]
 		if event.is_action_pressed(action):
-			if Classes.skill(class_id, slot).has("hold"):
+			if not skill_ready(slot):
+				_deny(slot)
+			elif Classes.skill(class_id, slot).has("hold"):
 				# Segurável (W do Mago): toque rápido ou segurar até completar.
 				_hold_slot = slot
 				_hold_time = 0.0
 			else:
+				# Mostra a mira enquanto a tecla está apertada; sai ao soltar.
+				_aim_slot = slot
+			return
+		if event.is_action_released(action):
+			if slot == _hold_slot:
+				_release_hold(false)
+				return
+			if slot == _aim_slot:
+				_aim_slot = ""
 				request_skill.rpc_id(1, slot, aim_point, hover_target_name())
-			return
-		if event.is_action_released(action) and slot == _hold_slot:
-			_release_hold(false)
-			return
+				return
 	if event.is_action_pressed("move_to_cursor"):
 		_show_move_marker(aim_point)
 	elif event.is_action_pressed("cast_weapon"):
@@ -425,6 +481,9 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	_update_body_visual()
 	_update_bubble_visual()
+	_update_charge_rings(delta)
+	if is_local() and not is_bot:
+		_update_aim_indicator()
 	if not _hold_slot.is_empty():
 		_hold_time += delta
 		if _hold_time >= Classes.skill(class_id, _hold_slot).hold:
@@ -442,6 +501,73 @@ func _release_hold(held: bool) -> void:
 		request_skill_held.rpc_id(1, slot, aim_point, hover_target_name())
 	else:
 		request_skill.rpc_id(1, slot, aim_point, hover_target_name())
+
+
+# Dá para usar a skill agora? (visto pelo dono, com os valores sincronizados)
+func skill_ready(slot: String) -> bool:
+	var skill := Classes.skill(class_id, slot)
+	if skill.is_empty() or health.dead or health.is_disabled() or health.silenced > 0.0:
+		return false
+	if skill_cooldowns.get(slot, 0.0) > 0.0 or mana < skill.cost:
+		return false
+	return slot != "r" or not queue_view.is_empty()
+
+
+# Skill negada: som de erro e o ícone pisca no HUD.
+func _deny(slot: String) -> void:
+	denied[slot] = Time.get_ticks_msec()
+	Audio.play("error", null, -4.0)
+
+
+# Forma da área da skill do slot, para a mira (ver aim_indicator.gd). {} = nenhuma.
+func aim_shape(slot: String) -> Dictionary:
+	var skill := Classes.skill(class_id, slot)
+	var charge: Array = queue_view
+	match skill.get("id", ""):
+		"orb":
+			var grow := 1.0 + Projectile.GROW_PER_ELEMENT * charge.size()
+			var blast := Projectile.splash_radius_for(charge) if not charge.is_empty() else 0.0
+			return {"type": "line", "length": AIM_LINE, "width": 0.35 * grow, "end_radius": blast}
+		"dagger":
+			return {"type": "line", "length": AIM_LINE, "width": 0.25}
+		"mini_meteor":
+			return {"type": "circle", "radius": skill.radius, "range": skill.range}
+		"shadow_step":
+			return {"type": "circle", "radius": skill.radius, "range": skill.distance, "fixed": true}
+		"whirl":
+			return {"type": "self", "radius": skill.radius}
+		"charge":
+			return {"type": "line", "length": DASH_SPEED * DASH_TIME, "width": DASH_HIT_RADIUS * 2.0}
+		"bless_curse":
+			return {"type": "self", "radius": skill.get("bubble_radius", 3.0)}
+		"ultimate":
+			return ULT_SHAPES.get(Ultimates.resolve(charge), {})
+	return {}
+
+
+# Dono: mira da skill apertada (ou do W segurado) e o alvo do W sob o mouse.
+func _update_aim_indicator() -> void:
+	if _aim_indicator == null:
+		_aim_indicator = AimIndicator.new()
+		get_parent().add_child(_aim_indicator)
+	var slot := _aim_slot if not _aim_slot.is_empty() else _hold_slot
+	if slot.is_empty() or health.dead:
+		_aim_indicator.hide_shape()
+	else:
+		var color := Vfx.mix_color(queue_view) if not queue_view.is_empty() else Color(0.85, 0.9, 1.0)
+		if slot == "r" and Ultimates.is_mega(queue_view):
+			color = MEGA_COLOR
+		_aim_indicator.show_shape(aim_shape(slot), global_position, aim_point, color)
+	var hovered_name := hover_target_name()
+	var hovered: Node3D = null if hovered_name.is_empty() else get_parent().get_node_or_null(hovered_name) as Node3D
+	if hovered != null and (hovered == self or hovered.global_position.distance_to(global_position) > TARGET_RANGE):
+		hovered = null
+	_aim_indicator.show_hover(hovered, hovered != null and not _is_enemy(hovered))
+
+
+func _exit_tree() -> void:
+	if _aim_indicator != null and is_instance_valid(_aim_indicator):
+		_aim_indicator.queue_free()
 
 
 # 0 a 1 enquanto segura uma skill (barra no HUD); 0 sem segurar.
@@ -473,6 +599,34 @@ func _update_bubble_visual() -> void:
 # Invisível (Passo sombrio): quase transparente. Caído: a animação de queda.
 func _update_body_visual() -> void:
 	unit_model.set_alpha(0.8 if invisible > 0.0 and not health.dead else 0.0)
+
+
+# Carga (D F G): um anel brilhante na cor de cada elemento carregado em volta do
+# personagem, o 1º por dentro e os seguintes por fora. Todos veem (queue_view é
+# sincronizado), menos quando o Assassino está invisível para os outros.
+func _update_charge_rings(delta: float) -> void:
+	var charge: Array = [] if health.dead else queue_view
+	if charge != _rings_shown:
+		_rings_shown = charge.duplicate()
+		for ring in _charge_rings:
+			ring.queue_free()
+		_charge_rings = []
+		for i in charge.size():
+			var color: Color = E.COLORS[charge[i]]
+			var ring := Vfx.add_ring(self, color, _body_radius() + CHARGE_RING_START + CHARGE_RING_GAP * i)
+			ring.position.y = 0.06 + 0.02 * i
+			ring.material_override = Vfx.glow_material(color, 3.0, 0.95)
+			_charge_rings.append(ring)
+	if _charge_rings.is_empty():
+		return
+	_ring_clock += delta
+	var hidden := invisible > 0.0 and not is_local()
+	for i in _charge_rings.size():
+		var ring: MeshInstance3D = _charge_rings[i]
+		ring.visible = not hidden
+		# Pulsa de leve, cada anel num tempo diferente.
+		var pulse := 1.0 + 0.05 * sin(_ring_clock * 5.0 + i * 1.3)
+		ring.scale = Vector3(pulse, 0.15, pulse)
 
 
 # Host: dispara uma animação pontual em todos os PCs.
@@ -669,6 +823,8 @@ func _try_skill(slot: String, aim_point_seen: Vector3, target_name: String, held
 	_clear_queue()
 	_act(SKILL_ANIMS.get(skill.id, "Spellcast_Raise"))
 	_cast_dir = Vector3.ZERO
+	if slot == "r":
+		play_sound.rpc("mega_cast" if Ultimates.is_mega(charge) else "ultimate_cast")
 
 
 # Alvo do W conferido no host: perto do personagem e (se não for jogador) vivo.
@@ -757,7 +913,7 @@ func _swing_weapon() -> void:
 			bonus = cls.backstab
 		var target_health = target.get_node_or_null("Health")
 		if target_health != null:
-			drain(target_health.damage(weapon.damage * bonus * _might()), [])
+			drain(target_health.damage(weapon.damage * bonus * _might()), [], target)
 		_push(target, _forward() * weapon.push)
 	invisible = 0.0
 	show_swing.rpc(-1, _forward(), weapon.range)
@@ -808,20 +964,32 @@ func _strike(target: Node, damage: float, charge: Array, scale := 1.0) -> float:
 	if damage > 0.0 and Combat.can_harm(team, target):
 		dealt += target_health.damage(damage * cls.spell_power * _might() * scale)
 	dealt += _hit(target, charge, scale)
-	drain(dealt, charge)
+	drain(dealt, charge, target)
 	return dealt
 
 
-# Roubo de vida (host): 25% do dano por Sangue nos elementos + o bônus de roubo de vida.
-# Chamado também por projéteis, meteoros e zonas deste personagem.
-func drain(dealt: float, used_elements: Array) -> void:
-	if dealt <= 0.0 or health.dead or not multiplayer.is_server():
+# Crédito do dano causado (host): conta no placar (dano e abate, se `target` caiu
+# com esse golpe) e aplica o roubo de vida: 25% do dano por Sangue nos elementos
+# + o bônus de roubo de vida. Chamado também por projéteis, meteoros e zonas.
+func drain(dealt: float, used_elements: Array, target: Node = null) -> void:
+	if dealt <= 0.0 or not multiplayer.is_server():
+		return
+	stat_damage += dealt
+	if target != null and target != self and target.get("health") != null and target.health.dead:
+		stat_kills += 1
+	if health.dead:
 		return
 	var fraction := BLOOD_STEAL * used_elements.count(E.Type.BLOOD)
 	if health.lifesteal > 0.0:
 		fraction += health.lifesteal_amount
 	if fraction > 0.0:
-		health.heal(dealt * fraction)
+		credit_heal(health.heal(dealt * fraction))
+
+
+# Cura feita por este personagem (placar).
+func credit_heal(amount: float) -> void:
+	if amount > 0.0 and multiplayer.is_server():
+		stat_healing += amount
 
 
 func _is_enemy(node: Node) -> bool:
@@ -850,7 +1018,7 @@ func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
 	var ally_health: Health = ally.health
 	if ally_health.dead:
 		ally_health.revive()
-	ally_health.heal(skill.get("heal", 0.0) * power)
+	credit_heal(ally_health.heal(skill.get("heal", 0.0) * power))
 	_self_elements(ally_health, charge)
 	var ward := charge.filter(func(element): return not (element in [E.Type.LIFE, E.Type.SHIELD, E.Type.BLOOD]))
 	if not ward.is_empty():
@@ -868,7 +1036,7 @@ func _support_skill(skill: Dictionary, charge: Array, target: Node3D) -> void:
 func _self_elements(target_health: Health, charge: Array) -> void:
 	var life := charge.count(E.Type.LIFE)
 	if life > 0:
-		target_health.heal(SELF_HEAL * life * power)
+		credit_heal(target_health.heal(SELF_HEAL * life * power))
 	var shield := charge.count(E.Type.SHIELD)
 	if shield > 0:
 		target_health.add_barrier(SELF_BARRIER * shield * power, SELF_BARRIER_TIME)
@@ -895,6 +1063,7 @@ func _bubble(skill: Dictionary, charge: Array) -> void:
 	for ally in _bubble_units(skill.bubble_radius, true):
 		ally.health.add_barrier(absorb, duration)
 	show_flash.rpc(global_position, skill.bubble_radius, _look(charge, E.Type.SHIELD))
+	play_sound.rpc("bubble_up")
 
 
 # Unidades vivas dentro da bolha: aliadas (com o próprio Mago) ou hostis.
@@ -939,7 +1108,7 @@ func _update_bubble(delta: float) -> void:
 	_bubble_tick = BUBBLE_TICK
 	for ally in _bubble_units(radius, true):
 		if E.Type.LIFE in bubble_elements:
-			ally.health.heal(BUBBLE_HEAL * bubble_elements.count(E.Type.LIFE) * BUBBLE_TICK * power)
+			credit_heal(ally.health.heal(BUBBLE_HEAL * bubble_elements.count(E.Type.LIFE) * BUBBLE_TICK * power))
 		if E.Type.WATER in bubble_elements:
 			ally.health.burning = 0.0
 			ally.health.blinded = 0.0
@@ -1212,7 +1381,7 @@ func _cast_mega(id: String, point: Vector3, scale: float, strength: float) -> bo
 				if Combat.team_of(player) != team:
 					continue
 				player.health.revive()
-				player.health.heal(player.health.max_hp)
+				credit_heal(player.health.heal(player.health.max_hp))
 				player.health.haste(0.3, 4.0)
 				show_flash.rpc(player.global_position, 2.0, E.Type.LIFE)
 		"mega_earth":
@@ -1290,7 +1459,7 @@ func _blood_burst(radius: float, damage: float, bleed_time: float, steal: float,
 	for enemy in _hostile_units(radius):
 		dealt += _strike(enemy, damage, extra, scale)
 		enemy.health.bleed(bleed_time)
-	health.heal(dealt * steal)
+	credit_heal(health.heal(dealt * steal))
 	show_flash.rpc(global_position, radius, E.Type.BLOOD)
 
 
@@ -1383,7 +1552,7 @@ func _update_storm(delta: float) -> void:
 	if targets.is_empty():
 		return
 	var target: Node3D = targets.pick_random()
-	drain(target.health.apply_elements(storm_elements, storm_scale), storm_elements)
+	drain(target.health.apply_elements(storm_elements, storm_scale), storm_elements, target)
 	show_bolt.rpc(target.global_position)
 	# Tempestade suprema: o raio salta para os inimigos mais perto do primeiro.
 	if storm_chain > 0:
@@ -1391,7 +1560,7 @@ func _update_storm(delta: float) -> void:
 		targets.sort_custom(func(a, b): return a.global_position.distance_to(target.global_position) \
 			< b.global_position.distance_to(target.global_position))
 		for other in targets.slice(0, storm_chain):
-			drain(other.health.apply_elements(storm_elements, storm_scale * 0.6), storm_elements)
+			drain(other.health.apply_elements(storm_elements, storm_scale * 0.6), storm_elements, other)
 			show_bolt.rpc(other.global_position)
 
 
@@ -1444,8 +1613,18 @@ func show_flash(at: Vector3, radius: float, element: int) -> void:
 	flash.global_position = Vector3(at.x, 0.05, at.z)
 	get_tree().create_timer(0.3).timeout.connect(flash.queue_free)
 	Audio.play("heal" if element == E.Type.LIFE else "area", at, minf(radius - 3.0, 3.0))
+	# Áreas grandes (ultimates) tremem a tela; as enormes (MEGA) dão um clarão.
+	if radius >= 7.0 and get_parent().has_method("impact"):
+		get_parent().impact(at, radius / 12.0, E.COLORS[element].lightened(0.5))
 	# Anel de partículas abrindo do centro.
 	Vfx.burst(get_parent(), Vector3(at.x, 0.4, at.z), element, int(clampf(radius * 14.0, 16.0, 90.0)), radius * 0.3, radius * 2.2)
+
+
+# Som que sai do personagem em todos os PCs (bolha, ultimate, MEGA).
+@rpc("any_peer", "call_local", "reliable")
+func play_sound(id: String) -> void:
+	if _sender() == 1:
+		Audio.play(id, self)
 
 
 @rpc("any_peer", "call_local", "reliable")

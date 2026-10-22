@@ -36,7 +36,7 @@ var marker: MeshInstance3D
 
 
 func _ready() -> void:
-	Audio.play("whoosh", self, 0.0 if mini else 2.0)
+	Audio.play("mini_meteor" if mini else "whoosh", self, 0.0 if mini else 2.0)
 	var color := _color()
 	marker = MeshInstance3D.new()
 	var disc := CylinderMesh.new()
@@ -103,25 +103,27 @@ func _explode() -> void:
 	Vfx.burst(get_parent(), global_position + Vector3.UP * 0.5, E.Type.EARTH, 60 if not mini else 30, 1.0, radius * 1.6)
 	Audio.play("explosion", global_position, 0.0 if mini else 3.0)
 	Audio.play("crunch", global_position)
+	if get_parent().has_method("impact"):
+		get_parent().impact(global_position, 0.35 if mini else 0.8, E.COLORS[E.Type.FIRE])
 	if not multiplayer.is_server():
 		return
-	var dealt := 0.0
+	var caster := get_parent().get_node_or_null(caster_name)
 	for node in get_tree().get_nodes_in_group("damageable"):
 		var offset: Vector3 = node.global_position - global_position
 		offset.y = 0.0
 		if offset.length() > radius or not Combat.can_harm(team, node):
 			continue
 		var health: Node = node.get_node("Health")
+		var dealt := 0.0
 		if mini:
 			dealt += health.damage(damage * strength)
 			dealt += health.apply_elements(Combat.filter_elements(team, node, elements), strength)
 		else:
 			dealt += health.apply_elements(Combat.filter_elements(team, node, ELEMENTS + extra), strength)
+		if caster != null and caster.has_method("drain"):
+			caster.drain(dealt, elements if mini else extra, node)
 		if node.has_method("push") and offset.length() > 0.01:
 			node.push(offset.normalized() * (MINI_PUSH if mini else PUSH))
-	var caster := get_parent().get_node_or_null(caster_name)
-	if caster != null and caster.has_method("drain"):
-		caster.drain(dealt, elements if mini else extra)
 	var lingering := elements if mini else zone_elements
 	if not lingering.is_empty() and get_parent().has_method("spawn_entity"):
 		get_parent().spawn_entity({"type": "zone", "pos": global_position, "team": team, "caster": caster_name,

@@ -87,6 +87,29 @@ class Driver extends Node:
 		player.request_skill("r", center, "")
 		await _seconds(1.05)
 		await _shot("meteoro")
+		# Mira do E (segurando a tecla) com Fogo, e do R com 3 iguais (MEGA).
+		await _seconds(1.5)
+		player.skill_cooldowns = {}
+		player.request_charge(0)
+		player._aim_slot = "e"
+		player.aim_point = center + Vector3(2, 0, 0)
+		await _seconds(0.3)
+		await _shot("mira")
+		player._aim_slot = ""
+		player._clear_queue()
+		for i in 3:
+			player.request_charge(1)
+		player._aim_slot = "r"
+		await _seconds(0.3)
+		await _shot("mira_mega")
+		player._aim_slot = ""
+		main.hud._toggle_help()
+		await _seconds(0.3)
+		await _shot("ajuda")
+		main.hud._toggle_help()
+		main.game_state.phase = 3   # vitória: mostra o placar
+		await _seconds(0.6)
+		await _shot("placar")
 
 	func _practice_shots() -> void:
 		var dummy: Node = get_tree().get_nodes_in_group("dummies")[0]

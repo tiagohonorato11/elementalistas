@@ -61,6 +61,11 @@ godot --headless --path . res://tests/practice_net_smoke.tscn -- --role=host
 godot --headless --path . res://tests/practice_net_smoke.tscn -- --role=client
 ```
 
+Teste da interface (números de dano, mira, skill negada, ícones, dicas, ajuda, placar, tremor):
+```
+godot --headless --path . res://tests/ui_smoke.tscn
+```
+
 Teste do fluxo da partida (5 ondas → vitória → reinício → derrota):
 ```
 godot --headless --path . res://tests/flow_smoke.tscn
@@ -91,7 +96,7 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - `scripts/vfx/`: visual: partículas dos elementos, efeitos de feitiços e estados, modelos animados das unidades e barras de vida.
 - `scripts/audio/`: som: autoload `Audio` (efeitos 3D, loops, música com troca calma/combate/chefe, volumes), sons das unidades e dos eventos da partida.
 - `assets/`: modelos KayKit (CC0), áudio (CC0) e o shader do terreno.
-- `scripts/ui/`: teclas configuráveis (autoload `Keybinds`), tela de configurações (teclas e volumes) e minimapa.
+- `scripts/ui/`: teclas configuráveis (autoload `Keybinds`), tela de configurações (teclas e volumes), minimapa e os ícones desenhados do HUD (`glyphs.gd`, `skill_icon.gd`).
 - `scripts/net/`: rede: lobby, conexão ENet, descoberta na LAN e sincronização.
 - `docs/mecanicas.md`: documento de design.
 
@@ -105,4 +110,4 @@ Modelos 3D, texturas e animações de personagens, esqueletos, construções e n
 - ✅ Mago volátil: Orbe que cresce e explode em área, W segurado vira bolha de escudo, Mini meteoro que deixa zonas elementais.
 - ✅ Modo MOBA 3v3: torres, inibidores, nexus, tropas, selva, Guardião, ouro, níveis, loja, reaparecer e bots.
 - ✅ Fase 5 (visual e som): partículas por elemento, céu e iluminação, personagens e esqueletos animados (KayKit), torres/castelo, árvores e montanhas, barras de vida, ícones dos elementos, minimapa, efeitos sonoros 3D, ambiente e música que muda em combate e perto do Guardião.
-- ⬜ Fase 6: polimento.
+- 🟡 Fase 6 (polimento): anéis da carga, mira no chão, alvo do W, ícones desenhados, dicas, números de dano, avisos de estado, tremor e clarão, sons próprios, ajuda (F1) e placar. Falta: arte final dos ícones e o que surgir nos testes com amigos.

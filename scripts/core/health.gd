@@ -66,6 +66,7 @@ var lifesteal_amount := 0.0
 var barrier := 0.0           # tempo restante da barreira
 var barrier_hp := 0.0        # dano que a barreira ainda absorve
 var silenced := 0.0          # Apagão (Vazio): não usa skills
+var last_element := -1       # último elemento que causou dano (cor dos números de dano)
 var dead := false
 
 
@@ -108,12 +109,18 @@ func apply_elements(elements: Array, scale: float) -> float:
 
 # Dano direto, sem elemento (ex.: golpe corpo a corpo). Devolve o dano causado.
 func damage(amount: float) -> float:
+	last_element = -1
 	return _change_hp(-amount)
 
 
 # Cura direta (ex.: fonte da base no MOBA). Não passa pela armadura.
-func heal(amount: float) -> void:
+# Devolve quanto de vida foi recuperado (para o placar).
+func heal(amount: float) -> float:
+	if dead:
+		return 0.0
+	var before := hp
 	_change_hp(absf(amount))
+	return hp - before
 
 
 # Proteção elemental: imune aos elementos dados por WARD_TIME segundos.
@@ -264,6 +271,8 @@ func _apply(element: int, scale: float) -> float:
 		blinded = maxf(blinded, BLIND_TIME)
 	elif element == E.Type.BLOOD:
 		bleed(BLEED_TIME)
+	if amount > 0.0:
+		last_element = element
 	return _change_hp(-amount)
 
 
