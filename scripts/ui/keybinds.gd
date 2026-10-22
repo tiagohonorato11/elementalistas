@@ -24,6 +24,7 @@ const ACTIONS := [
 	{"id": "cast_weapon", "label": "Golpe básico", "default": ["mouse", MOUSE_BUTTON_LEFT]},
 	{"id": "shop", "label": "Abrir a loja (MOBA)", "default": ["key", KEY_B]},
 	{"id": "practice_panel", "label": "Mostrar/esconder o painel (Treino)", "default": ["key", KEY_TAB]},
+	{"id": "help", "label": "Tela de ajuda", "default": ["key", KEY_F1]},
 ]
 
 const MOUSE_NAMES := {

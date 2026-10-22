@@ -53,6 +53,10 @@ var map_walls: Array[Rect2] = []
 var map_lanes: Array[Rect2] = []
 var _entity_counter := 0
 var _terrain_materials := {}
+var _shake := 0.0             # tremor da câmera (impactos grandes perto do jogador)
+const SHAKE_RANGE := 25.0
+const SHAKE_DECAY := 2.5
+const SHAKE_AMOUNT := 0.45
 
 
 func _ready() -> void:
@@ -83,11 +87,29 @@ func _ready() -> void:
 	Network.report_loaded()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if is_instance_valid(local_player):
 		var offset := MOBA_CAMERA_OFFSET if mode == "moba" else CAMERA_OFFSET
 		camera.global_position = local_player.global_position + offset * zoom
 		camera.look_at(local_player.global_position + Vector3.UP)
+		if _shake > 0.0:
+			camera.global_position += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) \
+				* _shake * SHAKE_AMOUNT
+			_shake = maxf(_shake - SHAKE_DECAY * delta, 0.0)
+
+
+# Impacto visto neste PC: treme a câmera (mais forte perto do jogador) e, nos
+# muito grandes (força >= 1, como as versões MEGA), dá um clarão na tela.
+func impact(at: Vector3, strength: float, color := Color.WHITE) -> void:
+	if not is_instance_valid(local_player):
+		return
+	var distance := local_player.global_position.distance_to(at)
+	if distance > SHAKE_RANGE:
+		return
+	var felt := strength * (1.0 - distance / SHAKE_RANGE)
+	_shake = maxf(_shake, felt)
+	if strength >= 1.0:
+		hud.flash(color, 0.35 * felt)
 
 
 func _unhandled_input(event: InputEvent) -> void:

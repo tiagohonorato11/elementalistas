@@ -65,7 +65,7 @@ func _ready() -> void:
 		particles.emitting = true
 		add_child(particles)
 		_emitters.append(particles)
-	Audio.play("area", self, minf(radius - 3.0, 3.0))
+	Audio.play("zone_pulse", self, minf(radius - 3.0, 3.0))
 	if multiplayer.is_server():
 		_impact()
 
@@ -140,13 +140,18 @@ func _push(node: Node, impulse: Vector3) -> void:
 
 # Dano direto em um inimigo; o dano volta como roubo de vida para quem lançou.
 func _damage(node: Node, amount: float) -> void:
-	_drain(node.health.damage(amount * strength))
+	_drain(node.health.damage(amount * strength), node)
 
 
-func _drain(dealt: float) -> void:
+func _caster() -> Node:
 	var caster := get_parent().get_node_or_null(caster_name)
-	if caster != null and caster.has_method("drain"):
-		caster.drain(dealt, elements)
+	return caster if caster != null and caster.has_method("drain") else null
+
+
+func _drain(dealt: float, target: Node) -> void:
+	var caster := _caster()
+	if caster != null:
+		caster.drain(dealt, elements, target)
 
 
 # Na queda: Gelo, Água e Terra.
@@ -208,11 +213,13 @@ func _pulse() -> void:
 			health.blinded = maxf(health.blinded, TICK + 0.5)
 	if E.Type.LIGHTNING in elements and not enemies.is_empty():
 		var target: Node3D = enemies.pick_random()
-		_drain(target.health.apply_elements([E.Type.LIGHTNING], BOLT_SCALE * _mult(E.Type.LIGHTNING) * strength))
+		_drain(target.health.apply_elements([E.Type.LIGHTNING], BOLT_SCALE * _mult(E.Type.LIGHTNING) * strength), target)
 		show_zap.rpc(target.global_position)
 	for node in _allies():
 		if E.Type.LIFE in elements:
-			node.health.heal(LIFE_HPS * _mult(E.Type.LIFE) * TICK * strength)
+			var healed: float = node.health.heal(LIFE_HPS * _mult(E.Type.LIFE) * TICK * strength)
+			if _caster() != null:
+				_caster().credit_heal(healed)
 		if E.Type.SHIELD in elements:
 			node.health.fortify(0.5, TICK + 0.3)
 		if E.Type.SMOKE in elements and node.get("invisible") != null:
@@ -231,3 +238,5 @@ func show_zap(at: Vector3) -> void:
 func show_blast(element: int) -> void:
 	Vfx.burst(get_parent(), global_position + Vector3.UP * 0.5, element, int(radius * 25.0), radius * 0.3, radius * 2.2)
 	Audio.play("explosion", global_position)
+	if get_parent().has_method("impact"):
+		get_parent().impact(global_position, 0.35)

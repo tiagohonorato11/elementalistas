@@ -47,11 +47,15 @@ class Driver extends Node:
 		_key(KEY_G)   # 4º elemento: a carga já está cheia
 		await _seconds(0.1)
 		_check(player.queue_view == [T.FIRE, T.FIRE, T.LIGHTNING], "D D F carregam Fogo, Fogo, Raio (máximo 3)")
+		var ring_colors: Array = player._charge_rings.map(func(ring): return ring.material_override.emission)
+		_check(ring_colors.size() == 3 and ring_colors[0].is_equal_approx(E.COLORS[T.FIRE])
+			and ring_colors[2].is_equal_approx(E.COLORS[T.LIGHTNING]), "um anel na cor de cada elemento da carga")
 		var mana_before: float = player.mana
 		_key(KEY_Q)
 		await _seconds(0.5)
 		_check(dummy.health.hp < 500.0 - 30.0 and dummy.health.burning > 0.0, "Q: Orbe com a carga acerta e queima (hp=%d)" % dummy.health.hp)
 		_check(player.queue_view.is_empty(), "a skill consome a carga")
+		_check(player._charge_rings.is_empty(), "os anéis somem quando a carga é usada")
 		_check(player.mana < mana_before and player.skill_cooldowns.get("q", 0.0) > 0.0, "Q gasta mana e entra em recarga")
 		var hp_after: float = dummy.health.hp
 		_key(KEY_Q)

@@ -169,7 +169,21 @@ Vale para as 3 classes. O HUD mostra qual sairia.
 Todas as teclas podem ser trocadas em **Configurações**, no lobby (salvas em `user://settings.cfg`).
 - **Andar:** **botão direito** no chão: o personagem vai até lá pelo caminho mais curto, contornando obstáculos; segurando, segue o cursor. As setas também andam.
 - **Mira:** sempre no ponteiro do mouse.
-- **D F G:** carregar elementos. **Q W E R:** skills. **Botão esquerdo:** golpe. **B:** loja (MOBA). **Esc:** sair.
+- **D F G:** carregar elementos. **Q W E R:** skills. **Botão esquerdo:** golpe. **B:** loja (MOBA). **F1:** ajuda. **Esc:** sair.
+- **Q, E e R saem ao soltar a tecla:** enquanto ela está apertada, o chão mostra a mira (faixa, área no cursor com o anel de alcance, área em volta ou leque). Um toque rápido lança na hora. O W do Mago continua: toque = Bênção/Maldição, segurar 1,5 s = bolha.
+
+## Clareza na tela
+- **Anéis da carga:** cada elemento carregado acende um anel da cor dele em volta do personagem (todos veem; o Assassino invisível esconde os dele).
+- **Mira:** a área de cada skill aparece no chão ao segurar a tecla, na cor da carga; dourada quando o R vai sair MEGA.
+- **Alvo do W:** a unidade sob o mouse ganha um anel verde (aliado) ou vermelho (inimigo).
+- **Ícones desenhados** para as skills e os elementos; a recarga escurece o ícone como um relógio; o R fica dourado com "MEGA" quando a carga tem 3 iguais.
+- **Skill negada** (recarga, sem mana, silenciado, R sem carga): som de erro e o ícone pisca em vermelho.
+- **Dicas:** parar o mouse num ícone mostra o que a skill faz e o que a carga atual muda (área da Orbe, zonas do Mini meteoro, poder da bolha, ultimate e zonas).
+- **Números de dano** sobem dos alvos na cor do último elemento; a cura sobe em verde. Avisos: Congelado!, Atordoado!, Cego!, Silenciado!, Sangrando!, Marcado!
+- **Impactos:** meteoros, explosões e ultimates tremem a tela (mais forte perto); as áreas enormes (MEGA) dão um clarão.
+- **Sons próprios:** bolha, Mini meteoro, zonas, ultimate e as versões MEGA.
+- **Tela de ajuda (F1):** controles, fusões, opostos, elementos com as zonas e todos os ultimates (normal e MEGA).
+- **Placar** no fim da partida: dano, cura e abates de cada jogador.
 
 ## Inimigos (`scripts/gameplay/enemy.gd`)
 | Tipo | Vida | Ataque | Particularidade |
@@ -255,11 +269,15 @@ Escolhido no lobby (**Modo: MOBA (3v3)**). Cada jogador escolhe o time Azul ou V
 ## Ainda por fazer
 - [ ] Testar as skills e os ultimates em partida real com amigos
 - [ ] Balancear mana, recargas e dano das skills (números iniciais)
-- [ ] Ícones desenhados para as skills (hoje são caixas com o nome)
+- [ ] Ícones desenhados por um artista (hoje são símbolos simples feitos por código)
 - [ ] Mais arenas e um chefe
 - [ ] MOBA: balanceamento (os níveis sobem rápido), bots que também façam a selva
 
 ## Checklist de teste manual
+- [ ] Segurar E mostra a área no cursor; soltar lança. Segurar R com 3 iguais: área dourada
+- [ ] Mouse num inimigo: anel vermelho embaixo; num aliado: verde
+- [ ] Números de dano sobem dos alvos; "Congelado!" aparece ao congelar
+- [ ] Q em recarga: som de erro e o ícone pisca; F1 abre a ajuda; o placar aparece no fim
 - [ ] Treino: os 3 bonecos aparecem; o dano e o DPS sobem ao acertar; Tab esconde o painel
 - [ ] Treino: Mana infinita + Sem recarga deixam usar as skills sem parar; trocar de classe pelo painel
 - [ ] No lobby: escolher a classe e 3 elementos; os opostos ficam bloqueados

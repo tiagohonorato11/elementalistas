@@ -58,8 +58,13 @@ func _volatile() -> bool:
 
 
 func splash_radius() -> float:
-	return SPLASH_RADIUS + SPLASH_PER_ELEMENT * elements.size() \
-		+ (FIRE_SPLASH_BONUS if E.Type.FIRE in elements else 0.0)
+	return splash_radius_for(elements)
+
+
+# Raio da explosão da Orbe volátil com a carga `charge` (também usado pela mira).
+static func splash_radius_for(charge: Array) -> float:
+	return SPLASH_RADIUS + SPLASH_PER_ELEMENT * charge.size() \
+		+ (FIRE_SPLASH_BONUS if E.Type.FIRE in charge else 0.0)
 
 
 func _ready() -> void:
@@ -159,9 +164,9 @@ func _physics_process(delta: float) -> void:
 			dealt += target_health.damage(damage * power * bonus)
 		if target_health != null and not hit_elements.is_empty():
 			dealt += target_health.apply_elements(hit_elements, power * bonus)
+		_drain(dealt, target)
 		if _volatile():
-			dealt += _explode(hit.position, target)
-		_drain(dealt)
+			_explode(hit.position, target)
 		if target.has_method("push") and Combat.can_harm(team, target):
 			var gravity := elements.count(E.Type.GRAVITY)
 			if gravity > 0:
@@ -174,9 +179,8 @@ func _physics_process(delta: float) -> void:
 	global_position = from + step
 
 
-# Orbe volátil: explosão em área (sem o alvo direto). Devolve o dano causado.
-func _explode(at: Vector3, direct: Object) -> float:
-	var dealt := 0.0
+# Orbe volátil: explosão em área (sem o alvo direto).
+func _explode(at: Vector3, direct: Object) -> void:
 	var reach := splash_radius()
 	var earth := elements.count(E.Type.EARTH)
 	var gravity := elements.count(E.Type.GRAVITY)
@@ -188,7 +192,7 @@ func _explode(at: Vector3, direct: Object) -> float:
 		offset.y = 0.0
 		if offset.length() > reach:
 			continue
-		dealt += _hit_node(node, damage * splash)
+		_drain(_hit_node(node, damage * splash), node)
 		hit.append(node)
 		if node.has_method("push") and Combat.can_harm(team, node) and offset.length() > 0.01:
 			if gravity > 0:
@@ -206,9 +210,9 @@ func _explode(at: Vector3, direct: Object) -> float:
 				others.append(node)
 		others.sort_custom(func(a, b): return a.global_position.distance_to(at) < b.global_position.distance_to(at))
 		for node in others.slice(0, CHAIN_TARGETS):
-			dealt += node.health.damage(damage * 0.5 * power)
-			dealt += node.health.apply_elements([E.Type.LIGHTNING], power)
-	return dealt
+			var chained: float = node.health.damage(damage * 0.5 * power)
+			chained += node.health.apply_elements([E.Type.LIGHTNING], power)
+			_drain(chained, node)
 
 
 func _hit_node(node: Node, amount: float) -> float:
@@ -224,10 +228,10 @@ func _hit_node(node: Node, amount: float) -> float:
 	return dealt
 
 
-func _drain(dealt: float) -> void:
+func _drain(dealt: float, target: Object) -> void:
 	var caster := get_parent().get_node_or_null(caster_name)
 	if caster != null and caster.has_method("drain"):
-		caster.drain(dealt, elements)
+		caster.drain(dealt, elements, target)
 
 
 # Bolha do Mago com Arcano: o projétil volta contra quem lançou (host).
