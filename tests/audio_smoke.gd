@@ -21,12 +21,35 @@ func _ready() -> void:
 	Audio.play("bolt")
 	_check(Audio._voices.get("bolt", 0) == 1, "efeito tocando")
 
+	for track in Audio.TRACK_FILES:
+		_check(Audio._music_stream(track, false) != null, "música carrega: " + track)
+
 	Audio.music("arena")
-	_check(Audio._track == "explore", "arena começa calma")
+	_check(Audio._track in Audio.POOLS.calm, "arena começa calma (%s)" % Audio._track)
 	Audio.combat_ping()
-	_check(Audio._track == "battle", "luta esquenta a trilha")
+	_check(Audio._track in Audio.POOLS.calm, "um golpe só não troca a trilha")
+	Audio.combat_ping()
+	Audio.combat_ping()
+	_check(Audio._track in Audio.POOLS.combat, "luta de verdade esquenta a trilha (%s)" % Audio._track)
 	Audio.set_boss(true)
-	_check(Audio._track == "boss", "chefe por perto: trilha de chefe")
+	_check(Audio._track in Audio.POOLS.boss, "chefe por perto: trilha de chefe")
+	Audio.set_boss(false)
+	Audio._combat_timer = 0.01
+	Audio._process(0.1)
+	_check(Audio._track == "" and Audio._gap_timer > 0.0, "depois da luta: pausa só com o ambiente")
+	Audio._process(Audio._gap_timer + 0.1)
+	_check(Audio._track in Audio.POOLS.calm, "depois da pausa: outra música calma")
+	var picks := {}
+	for i in 6:
+		picks[Audio._pick_file("amb_bird", Audio.SOUNDS.amb_bird[0])] = true
+	_check(picks.size() >= 3, "sons variam (%d arquivos diferentes em 6)" % picks.size())
+	var last := ""
+	var repeated := false
+	for i in 20:
+		var file := Audio._pick_file("bolt", Audio.SOUNDS.bolt[0])
+		repeated = repeated or file == last
+		last = file
+	_check(not repeated, "não repete o mesmo arquivo duas vezes seguidas")
 	Audio.stinger("victory")
 	_check(Audio._track == "", "fim de partida: só a fanfarra")
 

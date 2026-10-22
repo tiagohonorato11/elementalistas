@@ -167,6 +167,16 @@ const ULT_SHAPES := {
 	"mega_smoke": {"type": "self", "radius": MEGA_SMOKE_RADIUS},
 	"mega_blood": {"type": "self", "radius": FEAST_RADIUS},
 }
+# Som das áreas por elemento: [id, tom]. Cada elemento soa diferente.
+const AREA_SOUNDS := {
+	E.Type.WATER: ["burst_water", 1.0], E.Type.STEAM: ["burst_water", 0.8],
+	E.Type.FIRE: ["burst_fire", 1.0], E.Type.LIFE: ["heal", 1.0],
+	E.Type.COLD: ["impact_ice", 1.0], E.Type.ICE: ["impact_ice", 0.9],
+	E.Type.EARTH: ["impact_rock", 1.0], E.Type.LIGHTNING: ["bolt", 1.0],
+	E.Type.SHIELD: ["shield_up", 1.0], E.Type.ARCANE: ["burst_magic", 1.15],
+	E.Type.VOID: ["burst_magic", 0.7], E.Type.GRAVITY: ["burst_magic", 0.55],
+	E.Type.SMOKE: ["burst_fire", 0.6], E.Type.BLOOD: ["burst_magic", 0.85],
+}
 const AIM_LINE := 14.0           # comprimento da faixa de mira dos projéteis
 const MEGA_COLOR := Color(1.0, 0.82, 0.3)
 
@@ -1612,7 +1622,8 @@ func show_flash(at: Vector3, radius: float, element: int) -> void:
 	get_parent().add_child(flash)
 	flash.global_position = Vector3(at.x, 0.05, at.z)
 	get_tree().create_timer(0.3).timeout.connect(flash.queue_free)
-	Audio.play("heal" if element == E.Type.LIFE else "area", at, minf(radius - 3.0, 3.0))
+	var sound: Array = AREA_SOUNDS.get(element, ["area", 1.0])
+	Audio.play(sound[0], at, minf(radius - 3.0, 3.0), sound[1])
 	# Áreas grandes (ultimates) tremem a tela; as enormes (MEGA) dão um clarão.
 	if radius >= 7.0 and get_parent().has_method("impact"):
 		get_parent().impact(at, radius / 12.0, E.COLORS[element].lightened(0.5))

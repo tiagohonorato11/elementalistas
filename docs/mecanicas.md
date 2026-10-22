@@ -182,6 +182,12 @@ Todas as teclas podem ser trocadas em **Configurações**, no lobby (salvas em `
 - **Números de dano** sobem dos alvos na cor do último elemento; a cura sobe em verde. Avisos: Congelado!, Atordoado!, Cego!, Silenciado!, Sangrando!, Marcado!
 - **Impactos:** meteoros, explosões e ultimates tremem a tela (mais forte perto); as áreas enormes (MEGA) dão um clarão.
 - **Sons próprios:** bolha, Mini meteoro, zonas, ultimate e as versões MEGA.
+
+## Som e música (`scripts/audio/`)
+- **Efeitos com variação:** os sons frequentes têm de 3 a 5 versões; o jogo sorteia uma (nunca a mesma duas vezes seguidas) e varia o tom. Cada elemento tem o próprio som de área (respingo, labareda, gelo, pedra, raio, magia em tons diferentes).
+- **Menos cansativo:** o toque da carga, os passos (os dos outros bem mais baixos) e os golpes ficaram mais baixos; dano contínuo pequeno não vira batucada; há um limite de efeitos ao mesmo tempo.
+- **Ambiente vivo:** vento de fundo longo e sons soltos (pássaros, grilos, folhas, pio distante) em tempos e lugares aleatórios em volta de você; na luta, a natureza fica mais quieta.
+- **Música em rodízio:** 4 músicas calmas, 3 de combate e 2 de chefe (CC0). Na calma toca uma música por vez, com pausas de 25 a 50 s só com o ambiente. O combate só entra quando a luta engrena (3 golpes em 8 s), segura 18 s e, ao acabar, vem uma pausa antes da próxima música calma.
 - **Tela de ajuda (F1):** controles, fusões, opostos, elementos com as zonas e todos os ultimates (normal e MEGA).
 - **Placar** no fim da partida: dano, cura e abates de cada jogador.
 

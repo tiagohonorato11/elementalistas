@@ -3,8 +3,8 @@
 # sincronizado: toca igual em todos os PCs.
 extends Node3D
 
-const HIT_GAP := 0.3           # segundos mínimos entre dois sons de golpe
-const MIN_HIT := 3.0           # dano acumulado para soar um golpe
+const HIT_GAP := 0.45          # segundos mínimos entre dois sons de golpe
+const MIN_HIT := 8.0           # dano acumulado para soar um golpe (queimadura não vira batucada)
 const STEP_TIME := 0.34
 
 var material := "flesh"        # flesh (magos), bone (esqueletos), stone (estruturas)
@@ -90,5 +90,6 @@ func _update_steps(delta: float) -> void:
 		return
 	_step_timer -= delta * clampf(speed / 5.0, 0.6, 1.6)
 	if _step_timer <= 0.0:
-		_step_timer = STEP_TIME
-		Audio.play("footstep", self)
+		_step_timer = STEP_TIME * randf_range(0.92, 1.08)
+		# Passos dos outros bem mais baixos: só os seus ficam audíveis.
+		Audio.play("footstep", self, 0.0 if is_local else -8.0)
