@@ -3,6 +3,7 @@
 # Arena: usa Orbe, Mini meteoro, Maldição, bolha de escudo e Meteoro (Mago) em alvos com estados.
 # MOBA: tira fotos das rotas com tropas, de uma base e do centro da selva.
 # Lobby (--mode=lobby): a tela inicial.
+# Grimório (--mode=combos): a tela de combos com cada classe e skill.
 # Treino (--mode=practice): bonecos com o medidor de dano e o painel de testes.
 # Mundo (--mode=world): vila, campos, cemitério, covil e bosque.
 extends Node
@@ -22,6 +23,9 @@ class Driver extends Node:
 				mode = arg.get_slice("=", 1)
 		if mode == "lobby":
 			await _lobby_shot()
+			return
+		if mode == "combos":
+			await _combos_shots()
 			return
 		Network.my_class = "mage"
 		Network.my_loadouts = {}   # elementos padrão da classe
@@ -140,6 +144,23 @@ class Driver extends Node:
 		get_tree().change_scene_to_file("res://scenes/lobby.tscn")
 		await _seconds(0.8)
 		await _shot("lobby")
+		get_tree().quit()
+
+	# Grimório: uma carga e uma skill de cada classe, no meio da animação.
+	func _combos_shots() -> void:
+		Network.command_line_used = true
+		Network.my_loadouts = {}
+		get_tree().change_scene_to_file("res://scenes/combos.tscn")
+		await _seconds(0.5)
+		var screen := get_tree().current_scene
+		for shot in [["mage", 1, "q", 1.2], ["mage", 9, "e", 1.6], ["mage", 18, "r", 1.6], ["mage", 4, "w", 2.6],
+				["assassin", 7, "e", 0.9], ["assassin", 12, "r", 1.6], ["fighter", 5, "q", 0.8],
+				["fighter", 14, "r", 1.5]]:
+			screen._on_class_pressed(shot[0])
+			screen._on_combo_pressed(shot[1])
+			screen.select_slot(shot[2])
+			await _seconds(shot[3])
+			await _shot("%s_%s_%d" % [shot[0], shot[2], shot[1]])
 		get_tree().quit()
 
 	func _moba_shots() -> void:

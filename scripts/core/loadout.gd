@@ -4,6 +4,7 @@
 extends RefCounted
 
 const E = preload("res://scripts/core/elements.gd")
+const ElementQueue = preload("res://scripts/core/element_queue.gd")
 
 const SIZE := 3
 const BASIC := [E.Type.WATER, E.Type.LIFE, E.Type.SHIELD, E.Type.COLD,
@@ -14,6 +15,34 @@ const DEFAULTS := {
 	"assassin": [E.Type.ARCANE, E.Type.COLD, E.Type.EARTH],
 	"fighter": [E.Type.FIRE, E.Type.EARTH, E.Type.SHIELD],
 }
+
+
+# Todas as cargas que dá para montar com 1 a 3 toques nas teclas D F G (com
+# fusões, ex.: Água + Fogo = Vapor). Cada item: {"keys": índices 0..2 na ordem
+# apertada, "charge": a carga que resulta}. Sem cargas repetidas; das mais
+# curtas para as mais longas.
+static func charges(elements: Array) -> Array:
+	var result: Array = []
+	var seen := {}
+	var presses: Array = [[]]
+	for size in ElementQueue.MAX_SIZE:
+		var longer: Array = []
+		for keys in presses:
+			var last: int = keys[-1] if not keys.is_empty() else 0
+			for slot in range(last, elements.size()):
+				longer.append(keys + [slot])
+		presses = longer
+		for keys in presses:
+			var queue := ElementQueue.new()
+			for slot in keys:
+				queue.add(elements[slot])
+			var sorted := queue.elements.duplicate()
+			sorted.sort()
+			if queue.is_empty() or seen.has(str(sorted)):
+				continue
+			seen[str(sorted)] = true
+			result.append({"keys": keys, "charge": queue.elements.duplicate()})
+	return result
 
 
 static func default_for(class_id: String) -> Array:
