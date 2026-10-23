@@ -1,6 +1,7 @@
 # Grimório de combos: escolha uma classe e 3 elementos e veja todas as cargas
 # que dá para montar com D F G e o que cada skill (Q W E R) faz com elas, com
-# uma prévia animada. "Usar no lobby" leva a escolha para a partida.
+# uma prévia 3D: o personagem usando a skill de verdade em esqueletos (skill_stage.gd).
+# "Usar no lobby" leva a escolha para a partida.
 extends Control
 
 const Classes = preload("res://scripts/core/classes.gd")
@@ -10,7 +11,7 @@ const Loadout = preload("res://scripts/core/loadout.gd")
 const Ultimates = preload("res://scripts/core/ultimates.gd")
 const Glyphs = preload("res://scripts/ui/glyphs.gd")
 const SkillIcon = preload("res://scripts/ui/skill_icon.gd")
-const SkillPreview = preload("res://scripts/ui/skill_preview.gd")
+const SkillStage = preload("res://scripts/ui/skill_stage.gd")
 const SkillText = preload("res://scripts/ui/skill_text.gd")
 const Vfx = preload("res://scripts/vfx/vfx.gd")
 
@@ -37,7 +38,8 @@ var combo_list: VBoxContainer
 var combo_title: Label
 var combo_slots: Array = []    # 3 SkillIcon "slot" do cabeçalho
 var combo_effects: Label
-var preview: Control
+var stage: Node3D             # palco 3D (SkillStage) dentro do SubViewport
+var stage_caption: Label
 var skill_cards := {}          # slot -> PanelContainer
 var skill_icons := {}          # slot -> SkillIcon
 var description: RichTextLabel
@@ -50,6 +52,11 @@ func _ready() -> void:
 	picking = Network.my_elements()
 	_build_ui()
 	_refresh_class()
+
+
+func _process(_delta: float) -> void:
+	if stage_caption.text != stage.caption:
+		stage_caption.text = stage.caption
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -170,11 +177,25 @@ func _build_preview_column(parent: Node) -> void:
 	combo_effects.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	combo_effects.add_theme_color_override("font_color", Color(0.8, 0.85, 1.0))
 
-	preview = SkillPreview.new()
-	preview.clip_contents = true
-	preview.custom_minimum_size = Vector2(0, 230)
-	preview.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(preview)
+	# Prévia: o personagem de verdade usando a skill em esqueletos (mundo 3D próprio).
+	var view := SubViewportContainer.new()
+	view.stretch = true
+	view.custom_minimum_size = Vector2(0, 230)
+	view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(view)
+	var viewport := SubViewport.new()
+	viewport.own_world_3d = true
+	viewport.audio_listener_enable_3d = true
+	viewport.msaa_3d = Viewport.MSAA_4X
+	view.add_child(viewport)
+	stage = SkillStage.new()
+	viewport.add_child(stage)
+	stage_caption = _label(view, "", 18)
+	stage_caption.position = Vector2(12, 8)
+	stage_caption.add_theme_color_override("font_color", GOLD)
+	stage_caption.add_theme_constant_override("outline_size", 6)
+	stage_caption.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 
 	var cards := HBoxContainer.new()
 	cards.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -237,6 +258,7 @@ func _use() -> void:
 
 
 func _back() -> void:
+	stage.stop()
 	get_tree().change_scene_to_file(LOBBY_SCENE)
 
 
@@ -361,7 +383,10 @@ func _refresh_combo() -> void:
 		style.border_color = GOLD if id == slot else Color(0, 0, 0, 0)
 		skill_cards[id].add_theme_stylebox_override("panel", style)
 	var selected: Dictionary = info.skills[slot]
-	preview.show_skill(selected, charge)
+	if combos.is_empty():
+		stage.show_skill(class_id, Loadout.default_for(class_id), [], slot)
+	else:
+		stage.show_skill(class_id, picking, combos[combo_index].keys, slot)
 	var lines := SkillText.lines(selected, charge, Keybinds.action_text(SKILL_ACTIONS[slot]))
 	lines[0] = "[b]%s[/b]" % lines[0]
 	description.text = "\n".join(lines)

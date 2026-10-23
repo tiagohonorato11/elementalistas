@@ -54,7 +54,7 @@ var map_half := Vector2(ARENA_SIZE / 2.0, ARENA_SIZE / 2.0)
 var map_walls: Array[Rect2] = []
 var map_lanes: Array[Rect2] = []
 var _entity_counter := 0
-var _terrain_materials := {}
+static var _terrain_materials := {}
 var _shake := 0.0             # tremor da câmera (impactos grandes perto do jogador)
 const SHAKE_RANGE := 25.0
 const SHAKE_DECAY := 2.5
@@ -204,6 +204,37 @@ func spawn_entity(data: Dictionary) -> Node:
 # Roda em todos os peers: monta a entidade a partir dos dados enviados pelo host.
 func _spawn_entity(data: Dictionary) -> Node:
 	var node: Node3D
+	if data.type == "state":
+		game_state = GameState.new()
+		hud.game_state = game_state
+		node = game_state
+	elif data.type == "moba_state":
+		game_state = MobaState.new()
+		hud.game_state = game_state
+		node = game_state
+	elif data.type == "world_state":
+		game_state = WorldState.new()
+		hud.game_state = game_state
+		node = game_state
+	elif data.type == "practice_state":
+		game_state = PracticeState.new()
+		hud.game_state = game_state
+		node = game_state
+	else:
+		node = make_entity(data)
+		if data.type == "player" and not node.is_bot and data.id == multiplayer.get_unique_id():
+			local_player = node
+			node.camera = camera
+			hud.player = node
+	node.name = data.name
+	node.position = data.pos
+	return node
+
+
+# Personagens, inimigos e efeitos a partir dos dados (sem nome nem posição).
+# Também usado pelo palco do Grimório de combos.
+static func make_entity(data: Dictionary) -> Node3D:
+	var node: Node3D
 	if data.type == "player":
 		var player := Player.new()
 		player.is_bot = data.get("bot", false)
@@ -213,10 +244,6 @@ func _spawn_entity(data: Dictionary) -> Node:
 		player.team = data.get("team", Combat.BLUE)
 		player.color_index = data.get("color", 0)
 		player.elements = data.get("elements", [])
-		if not player.is_bot and data.id == multiplayer.get_unique_id():
-			local_player = player
-			player.camera = camera
-			hud.player = player
 		node = player
 	elif data.type == "enemy":
 		var enemy := Enemy.new()
@@ -258,22 +285,6 @@ func _spawn_entity(data: Dictionary) -> Node:
 		zone.duration = data.get("duration", 3.0)
 		zone.dps = data.get("dps", 0.0)
 		node = zone
-	elif data.type == "state":
-		game_state = GameState.new()
-		hud.game_state = game_state
-		node = game_state
-	elif data.type == "moba_state":
-		game_state = MobaState.new()
-		hud.game_state = game_state
-		node = game_state
-	elif data.type == "world_state":
-		game_state = WorldState.new()
-		hud.game_state = game_state
-		node = game_state
-	elif data.type == "practice_state":
-		game_state = PracticeState.new()
-		hud.game_state = game_state
-		node = game_state
 	elif data.type == "dummy":
 		var dummy := Dummy.new()
 		dummy.kind = data.kind
@@ -291,8 +302,6 @@ func _spawn_entity(data: Dictionary) -> Node:
 		minion.team = data.team
 		minion.path = MobaMap.lane_path(data.team, data.lane)
 		node = minion
-	node.name = data.name
-	node.position = data.pos
 	return node
 
 
@@ -321,7 +330,7 @@ func _build_world() -> void:
 	nav_mesh.agent_height = 2.0
 	region.navigation_mesh = nav_mesh
 	region.bake_navigation_mesh(false)
-	_add_lights()
+	add_lights(self)
 
 
 func _build_arena(region: NavigationRegion3D) -> void:
@@ -338,14 +347,14 @@ func _build_arena(region: NavigationRegion3D) -> void:
 
 
 # Sol com sombras, céu, brilho (bloom) para os efeitos, névoa leve e oclusão de ambiente.
-func _add_lights() -> void:
+static func add_lights(parent: Node) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52, 35, 0)
 	sun.light_color = Color(1.0, 0.95, 0.86)
 	sun.light_energy = 1.5
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 60.0
-	add_child(sun)
+	parent.add_child(sun)
 
 	var sky_material := ProceduralSkyMaterial.new()
 	sky_material.sky_top_color = Color(0.32, 0.5, 0.78)
@@ -377,12 +386,12 @@ func _add_lights() -> void:
 	env.adjustment_contrast = 1.08
 	var world := WorldEnvironment.new()
 	world.environment = env
-	add_child(world)
+	parent.add_child(world)
 
 
 # Material do terreno (shader com variação de cor) a partir de uma cor base.
 # Superfícies largas e baixas viram gramado com manchas de terra; o resto, pedra.
-func _terrain_material(color: Color, ground: bool) -> ShaderMaterial:
+static func terrain_material(color: Color, ground: bool) -> ShaderMaterial:
 	var key := [color, ground]
 	if _terrain_materials.has(key):
 		return _terrain_materials[key]
@@ -410,7 +419,7 @@ func _add_decal(at: Vector3, size: Vector2, color: Color) -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(size.x, 0.02, size.y)
 	mesh.mesh = box
-	mesh.material_override = _terrain_material(color, true)
+	mesh.material_override = terrain_material(color, true)
 	mesh.position = at + Vector3(0, 0.01, 0)
 	add_child(mesh)
 	map_lanes.append(Rect2(at.x - size.x / 2.0, at.z - size.y / 2.0, size.x, size.y))
@@ -444,7 +453,7 @@ func _add_block(parent: Node, at: Vector3, size: Vector3, color: Color, style :=
 	var box := BoxMesh.new()
 	box.size = size
 	mesh.mesh = box
-	mesh.material_override = _terrain_material(color, size.y <= 1.0 and size.x >= 20.0)
+	mesh.material_override = terrain_material(color, size.y <= 1.0 and size.x >= 20.0)
 	block.add_child(mesh)
 	parent.add_child(block)
 	if at.y >= 0.0:
