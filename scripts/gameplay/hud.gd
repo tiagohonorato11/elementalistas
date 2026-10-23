@@ -18,6 +18,7 @@ const WorldMap = preload("res://scripts/world/world_map.gd")
 const Quests = preload("res://scripts/world/quests.gd")
 const SkillIcon = preload("res://scripts/ui/skill_icon.gd")
 const Glyphs = preload("res://scripts/ui/glyphs.gd")
+const SkillText = preload("res://scripts/ui/skill_text.gd")
 const ElementInfo = preload("res://scripts/core/element_info.gd")
 const Loadout = preload("res://scripts/core/loadout.gd")
 const Projectile = preload("res://scripts/gameplay/projectile.gd")
@@ -515,34 +516,7 @@ func _update_skills() -> void:
 
 # Dica do ícone: o que a skill faz e o que a carga atual muda nela.
 func _skill_tooltip(slot: String, skill: Dictionary, charge: Array) -> String:
-	var lines := PackedStringArray(["%s (%s) — %d de mana, recarga de %d s" % [
-		skill.label, Keybinds.action_text(SKILL_ACTIONS[slot]), roundi(skill.cost), roundi(skill.cooldown)],
-		skill.get("description", "")])
-	match skill.id:
-		"orb":
-			if not charge.is_empty():
-				lines.append("Com a carga: explode em área de %.1f m (%s)." % [
-					Projectile.splash_radius_for(charge), ElementInfo.names(charge)])
-		"mini_meteor":
-			if not charge.is_empty():
-				lines.append("Zona: " + ElementInfo.describe(ElementInfo.ZONES, charge))
-		"bless_curse":
-			if not charge.is_empty():
-				lines.append("Carga: " + ElementInfo.names(charge))
-				lines.append("Bolha (segurar): " + ElementInfo.describe(ElementInfo.BUBBLE, charge))
-		"ultimate":
-			var id := Ultimates.resolve(charge)
-			if id.is_empty():
-				lines.append("Carregue elementos (3 iguais = MEGA).")
-			else:
-				lines.append("%s%s: %s" % ["MEGA " if Ultimates.is_mega(charge) else "", Ultimates.label(id),
-					Ultimates.ULTIMATES[id].description])
-				var zones := Ultimates.zone_elements(charge)
-				if not zones.is_empty():
-					lines.append("Zonas: " + ElementInfo.describe(ElementInfo.ZONES, zones))
-		_:
-			if not charge.is_empty():
-				lines.append("Carga: " + ElementInfo.describe(ElementInfo.EFFECTS, charge))
+	var lines := SkillText.lines(skill, charge, Keybinds.action_text(SKILL_ACTIONS[slot]))
 	if not skill.has("hold"):
 		lines.append("Segure a tecla para ver a mira; solte para lançar.")
 	return "\n".join(lines)

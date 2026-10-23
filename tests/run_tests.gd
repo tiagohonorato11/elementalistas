@@ -71,6 +71,14 @@ func _test_loadout() -> void:
 	check(Loadout.is_valid([T.VOID, T.GRAVITY, T.SMOKE]), "Vazio, Gravidade e Fumaça juntos valem")
 	check(not Loadout.is_valid([T.VOID, T.SHIELD, T.FIRE]), "Vazio e Escudo são opostos")
 	check(not Loadout.is_valid([T.SMOKE, T.WATER, T.FIRE]), "Fumaça e Água são opostos")
+	# Grimório: cargas que dá para montar com D F G.
+	var combos := Loadout.charges([T.FIRE, T.LIGHTNING, T.ARCANE])
+	check(combos.size() == 19, "3 elementos sem fusão: 3 + 6 + 10 cargas (%d)" % combos.size())
+	check(combos[0].charge == [T.FIRE] and combos[-1].charge == [T.ARCANE, T.ARCANE, T.ARCANE],
+		"cargas das mais curtas para as mais longas")
+	var fused: Array = Loadout.charges([T.WATER, T.FIRE, T.EARTH]).map(func(c): return c.charge)
+	check([T.STEAM] in fused, "Água + Fogo vira Vapor no grimório")
+	check(not ([T.WATER, T.FIRE] in fused), "Água e Fogo nunca ficam lado a lado")
 	for id in Classes.ORDER:
 		check(Loadout.is_valid(Loadout.default_for(id)), "padrão de %s é válido" % id)
 	var all_valid := true
